@@ -1,0 +1,8 @@
+**/__pycache__
+Old/*
+*.gif
+*.lnk
+
+# Do not upload files created when building releases
+*/build/*
+*/dist/*
