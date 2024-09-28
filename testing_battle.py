@@ -3,7 +3,7 @@ from math import inf  # noqa
 from Battle import Army, Landscape
 from GraphicBattle import GraphicBattle
 
-from Data import flat, even, rough, broken, ragged, \
+from Data import flat, even, rough, broken, ragged, forest, river, \
                  spear, sword, pike, javelin, archer, horse, h_archer, irreg  # noqa
 
 
@@ -158,10 +158,38 @@ def test_16():
 
 
 def test_17():
+    # Reserves come in at the correct time and all is displayed as expected
     army_1, army_2 = preamble()
     army_1.add(0, pike).add_reserves(pike, pike)
     army_2.add(0, sword).add_reserves(sword, sword)
     do_single_terrain_battle(army_1, army_2, ragged)
 
 
-test_17()
+def test_18():
+    # Side with reserves wins (in a very artificial scenario)
+    army_1, army_2 = preamble()
+    army_1.add(-1, sword).add(0, sword).add_reserves(horse)
+    army_2.add(-1, sword).add(0, sword).add(1, horse)
+
+    landscape = Landscape({-1: {inf: flat},
+                           0: {inf: flat},
+                           1: {inf: flat}})
+
+    GraphicBattle(army_1, army_2, landscape, (1280, 800), "test_out").do(verbosity=10)
+
+
+def test_19():
+    # Loss for army 1 when all deployed, a winning draw if javelins are pulled into reserves
+    army_1, army_2 = preamble()
+    army_1.add(-1, horse).add(0, sword).add(1, sword).add_reserves(javelin)
+    army_2.add(-1, horse).add(0, spear).add(1, spear).add(2, horse)
+
+    landscape = Landscape({-1: {1: broken, inf: rough},
+                           0: {-2: rough, 2: even, inf: flat},
+                           1: {0: rough, inf: even},
+                           2: {-1: even, inf: flat}})
+
+    GraphicBattle(army_1, army_2, landscape, (1280, 800), "test_out").do(verbosity=10)
+
+
+test_19()

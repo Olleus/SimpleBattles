@@ -28,6 +28,7 @@ LOCKED_SPEED_DIST: float = 4
 FILE_EMPTY: int = 0
 FILE_VULNERABLE: int = -2
 FILE_SUPPORTED: int = 1
+POWER_FROM_RESERVES: float = 0.10
 RESERVE_DIST_BEHIND: float = 2
 MIN_RESERVE_DIST: float = 0.5
 
@@ -178,9 +179,10 @@ class Unit:
         if self in self.army.deployed_units:
             morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
             neighbour = NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
+            reserves = self.army.reserve_power
             terrain = TERRAIN_POWER * self.terrain.smoothness * self.eff_terain_rigidity
             terrain = min(0, terrain) if self.terrain.penalty else terrain
-            return self.power + morale + neighbour + terrain
+            return self.power + morale + neighbour + reserves + terrain
         else:
             return self.power
 
@@ -262,7 +264,7 @@ class Army:
     other_army: Self = field(init=False)
 
     def __str__(self) -> str:
-        string = f"Army (init_pos={self.init_position:.0f})"
+        string = f"{self.name} (init_pos={self.init_position:.0f})"
         for file, unit in self.file_units.items():
             string += f"\n    {file:>2}: {unit}"
         if self.reserves:
@@ -286,6 +288,10 @@ class Army:
     @property
     def defeated(self) -> bool:
         return len(self.file_units) == 0
+
+    @property
+    def reserve_power(self) -> float:
+        return min(sum(unit.power for unit in self.reserves)*POWER_FROM_RESERVES, 2*POWER_SCALE)
 
     @cache
     def min_max_positions(self) -> list[float]:
