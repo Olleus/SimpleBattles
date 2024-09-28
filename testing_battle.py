@@ -1,3 +1,5 @@
+from math import inf  # noqa
+
 from Battle import Army, Landscape
 from GraphicBattle import GraphicBattle
 
@@ -9,10 +11,10 @@ def preamble():
     return Army("1", "DarkBlue"), Army("2", "DarkRed")
 
 
-def do_single_terrain_battle(army_1, army_2, terrain, name="battle_out"):
+def do_single_terrain_battle(army_1, army_2, terrain, name="test_out"):
     files = set(army_1.file_units) | set(army_2.file_units)
-    landscape = Landscape({file: {0: terrain} for file in files})
-    GraphicBattle(army_1, army_2, landscape, (720, 240), name).do(1)
+    landscape = Landscape({file: {inf: terrain} for file in files})
+    GraphicBattle(army_1, army_2, landscape, (1280, 720), name).do(10)
 
 
 """ spear - sword - pike trichotomy """
@@ -125,7 +127,7 @@ def test_13():
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(0, horse).add(1, horse)
-    do_single_terrain_battle(army_1, army_2, flat)
+    do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_14():
@@ -152,17 +154,14 @@ def test_16():
     do_single_terrain_battle(army_1, army_2, ragged)
 
 
-def main():
+""" Checking reserves work as intended """
+
+
+def test_17():
     army_1, army_2 = preamble()
-    army_1.add(-2, horse).add(-1, sword).add(0, sword).add(1, sword).add(2, archer)
-    army_2.add(-2, javelin).add(-1, pike).add(0, pike).add(1, pike).add(2, horse)
-
-    landscape = Landscape({-2: {-3: even, 1: rough, 3: broken},
-                           -1: {-2: rough, 0: even, 2: flat},
-                           0: {-2: rough, -1: even, 1: flat},
-                           1: {-3: rough, -2: even, 1: flat},
-                           2: {-4: even, -3: flat}})
-    GraphicBattle(army_1, army_2, landscape, (720, 540), "battle_out").do(1)
+    army_1.add(0, pike).add_reserves(pike, pike)
+    army_2.add(0, sword).add_reserves(sword, sword)
+    do_single_terrain_battle(army_1, army_2, ragged)
 
 
-main()
+test_17()
