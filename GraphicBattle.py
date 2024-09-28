@@ -3,7 +3,7 @@ import math
 from attrs import define, Factory, field
 from PIL import Image, ImageColor, ImageDraw
 
-from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, \
+from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, DEFAULT_TERRAIN, \
                    Landscape, Unit, Fight, OneWayFight, Battle
 
 
@@ -65,12 +65,21 @@ class BattleScene:
     def draw_background_file(self, file: int) -> None:
         draw = ImageDraw.Draw(self.background)
         pos_prior = -math.inf
-        corner = self.coord_position(file + 0.5, self.max_pos)
 
-        for pos, terrain in self.landscape.file_map(file).items():
-            pos_top = self.min_pos if pos_prior < self.min_pos else (pos + pos_prior) / 2
+        file_map = self.landscape.terrain_map.get(file, {})
+        if math.inf not in file_map:
+            file_map[math.inf] = DEFAULT_TERRAIN
+
+        for pos, terrain in file_map.items():
+            top = self.coord_position(file-0.5, max(pos_prior, self.min_pos))
+            bot = self.coord_position(file+0.5, min(pos, self.max_pos))
+            draw.rectangle((*top, *bot), fill=terrain.color)
             pos_prior = pos
-            draw.rectangle((*self.coord_position(file-0.5, pos_top), *corner), fill=terrain.color)
+
+        # for pos, terrain in file_map:
+        #     pos_top = self.min_pos if pos_prior < self.min_pos else (pos + pos_prior) / 2
+        #     pos_prior = pos
+        #     draw.rectangle((*self.coord_position(file-0.5, pos_top), *corner), fill=terrain.color)
 
     def draw_frame(self, units: list[Unit], fights: list[Fight], reps: int = 1) -> None:
         self.draw_fresh_canvas()

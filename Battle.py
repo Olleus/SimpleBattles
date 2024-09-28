@@ -16,9 +16,7 @@ FILE_WIDTH: float = 3  # Width of file in vertical length scale (also unit aspec
 SIDE_RANGE_PENALTY: float = 0.5
 BASE_SPEED: float = 20
 PURSUE_MORALE: float = -0.1
-
 HARASS_SLOW_DOWN: float = 1.5
-REFUSE_ORDER_MORALE: float = 0.3
 
 LOW_MORALE_POWER: float = 200
 TERRAIN_POWER: float = 100  # * O(1) * O(1)
@@ -41,30 +39,50 @@ class Terrain:
     name: str
     color: str = field(default="White")  # Must match HTML color names
     smoothness: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
-    # cover  - Reduces damage suffered by this percentage
+    cover: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
+    penalty: bool = field(default=False)  # If true, can smoothness can never increase value
 
 
 DEFAULT_TERRAIN = Terrain("Undefined", "white", 0)
+
+
+def is_inner_dict_sorted(instance, attribute, value):
+    for inner in value.values():
+        keys = list(inner.keys())
+        if not keys == sorted(keys):
+            raise ValueError("Keys in inner dict are not sorted as expected")
 
 
 @define
 class Landscape:
     """Landscape defined by giving Terrain at individual positions in files"""
 
+    # Outer key is file, inner key gives terrain up to that position (from prior one)
     terrain_map: dict[int, dict[float, Terrain]] = field(
-        converter=lambda x: dict(sorted([(k, dict(sorted(v.items()))) for k, v in x.items()])))
-    # Converter sorts the dictionary by both file (outer) and position (inner)
+        converter=lambda x: dict(sorted(x.items())), validator=is_inner_dict_sorted)
 
     def terrain(self, file: int, pos: float) -> Terrain:
-        """Position of closest define terrain in file (ties broken towards the middle) """
-        file_map = self.file_map(file)
-        key = min(file_map, key=lambda x: (abs(x-pos), abs(x), x))
-        return file_map[key]
-
-    def file_map(self, file: int) -> dict[float, Terrain]:
-        """Guaranteed to never return an empty dict, even if empty dicts passed to terrain_map"""
         file_map = self.terrain_map.get(file, {})
-        return file_map if file_map else {0: DEFAULT_TERRAIN}
+        for pos_bound, terrain in file_map.items():
+            if pos < pos_bound:
+                return terrain
+        return DEFAULT_TERRAIN
+
+    # DONT DELETE JUST YET - WILL USE FOR HEIGHT
+    # terrain_map: dict[int, dict[float, Terrain]] = field(
+    #     converter=lambda x: dict(sorted([(k, dict(sorted(v.items()))) for k, v in x.items()])))
+    # # Converter sorts the dictionary by both file (outer) and position (inner)
+
+    # def terrain(self, file: int, pos: float) -> Terrain:
+    #     """Position of closest define terrain in file (ties broken towards the middle) """
+    #     file_map = self.file_map(file)
+    #     key = min(file_map, key=lambda x: (abs(x-pos), abs(x), x))
+    #     return file_map[key]
+
+    # def file_map(self, file: int) -> dict[float, Terrain]:
+    #     """Guaranteed to never return an empty dict, even if empty dicts passed to terrain_map"""
+    #     file_map = self.terrain_map.get(file, {})
+    #     return file_map if file_map else {0: DEFAULT_TERRAIN}
 
 
 @define(frozen=True)
@@ -133,12 +151,12 @@ class Unit:
         return self.morale <= 0 or self.position == self.army.init_position
 
     @property
-    def eff_adv_speed(self) -> float:
-        locked = min(self.army.locked_speed, self.speed * (1 + self.terrain.smoothness))
-        return locked / (HARASS_SLOW_DOWN ** self.harassment)
+    def eff_speed(self) -> float:
+        eff_speed = self.speed * (1+self.terrain.smoothness) / (HARASS_SLOW_DOWN ** self.harassment)
+        return min(self.army.locked_speed, eff_speed)
 
     @property
-    def expanse(self) -> float:
+    def eff_terain_rigidity(self) -> float:
         return self.rigidity + (self.speed/BASE_SPEED - 1)
 
     # Getters
@@ -155,11 +173,11 @@ class Unit:
         return abs(self.position - position)
 
     def eff_power(self) -> float:
-        power = self.power
-        power -= LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
-        power += TERRAIN_POWER * self.terrain.smoothness * self.expanse
-        power += NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
-        return power
+        morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
+        neighbour = NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
+        terrain = TERRAIN_POWER * self.terrain.smoothness * self.eff_terain_rigidity
+        terrain = min(0, terrain) if self.terrain.penalty else terrain
+        return self.power + morale + neighbour + terrain
 
     def state_neighboring_files(self) -> int:
         """alone: -1, end of line: 0 (if open: -3), centre: 1, one flank open: -2, both open: -5"""
@@ -171,10 +189,10 @@ class Unit:
     # Setters
     def move_towards(self, target: float) -> None:
         if self.position < target:
-            self.position = min(self.position + self.eff_adv_speed*DELTA_T, target)
+            self.position = min(self.position + self.eff_speed*DELTA_T, target)
 
         elif self.position > target:
-            self.position = max(self.position - self.eff_adv_speed*DELTA_T, target)
+            self.position = max(self.position - self.eff_speed*DELTA_T, target)
 
         self.cap_position()
 
@@ -183,10 +201,10 @@ class Unit:
         eff_range = self.eff_range_for(unit.file) - EPS
 
         if self.position < target - eff_range:
-            self.position = min(self.position + self.eff_adv_speed*DELTA_T, target - eff_range)
+            self.position = min(self.position + self.eff_speed*DELTA_T, target - eff_range)
 
         elif self.position > target + eff_range:
-            self.position = max(self.position - self.eff_adv_speed*DELTA_T, target + eff_range)
+            self.position = max(self.position - self.eff_speed*DELTA_T, target + eff_range)
 
         self.cap_position()
 
@@ -262,8 +280,8 @@ class Army:
     def set_up(self, top: bool, landscape: Landscape, other_army: Self) -> None:
         self.file_units = dict(sorted(self.file_units.items()))
         self.set_up_init_position(top)
-        self.locked_speed = min(unit.speed for unit in self.units)
         self.landscape = landscape
+        self.locked_speed = min(unit.eff_speed for unit in self.units)
         self.other_army = other_army
 
     def set_up_init_position(self, top: bool) -> None:
@@ -350,10 +368,10 @@ class Fight:
         self.balance = 2.0 ** ((self.unit_A.eff_power() - self.unit_B.eff_power())/(2*POWER_SCALE))
 
     def do_casualties_on_A(self) -> None:
-        self.unit_A.change_morale(- DELTA_T / self.balance)
+        self.unit_A.change_morale(- DELTA_T * (1 - self.unit_A.terrain.cover) / self.balance)
 
     def do_casualties_on_B(self) -> None:
-        self.unit_B.change_morale(- DELTA_T * self.balance)
+        self.unit_B.change_morale(- DELTA_T * (1 - self.unit_B.terrain.cover) * self.balance)
 
     def do_push(self) -> None:
         if self.balance >= 1:  # A is pushing B back
@@ -364,7 +382,8 @@ class Fight:
     def do_push_from_winner(self, winner: Unit, loser: Unit, balance: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, winner tries to keep up
         step = DELTA_T if loser.position < loser.army.init_position else -DELTA_T
-        dist = step * min(winner.speed, loser.speed * min(1, (balance-1) / (1+loser.rigidity)))
+        factor = min(1, (balance-1) / (1+loser.rigidity))
+        dist = step * min(winner.eff_speed, loser.eff_speed * factor)
         loser.move_by(dist)
 
         # Used mostly to prevent mutual flanking from pursuing when ahead

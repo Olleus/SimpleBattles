@@ -8,6 +8,9 @@ rough = Terrain("Rough", "YellowGreen", smoothness=-0.1)
 broken = Terrain("Broken", "Khaki", smoothness=-0.2)
 ragged = Terrain("Ragged", "BurlyWood", smoothness=-0.3)
 
+forest = Terrain("Forest", "ForestGreen", smoothness=-0.5, cover=0.5)
+river = Terrain("River", "DodgerBlue", smoothness=-0.8, cover=-0.5, penalty=True)
+
 """    UNIT TYPE    """
 
 spear = UnitType("Spear", 300)
