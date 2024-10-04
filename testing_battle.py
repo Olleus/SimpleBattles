@@ -161,7 +161,7 @@ def test_17():
     # Reserves come in at the correct time and all is displayed as expected
     army_1, army_2 = preamble()
     army_1.add(0, pike).add_reserves(pike, pike)
-    army_2.add(0, sword).add_reserves(sword, sword)
+    army_2.add(2, sword).add_reserves(sword, sword)
     do_single_terrain_battle(army_1, army_2, ragged)
 
 
@@ -173,23 +173,50 @@ def test_18():
 
     landscape = Landscape({-1: {inf: flat},
                            0: {inf: flat},
-                           1: {inf: flat}})
+                           1: {inf: river}})
 
     GraphicBattle(army_1, army_2, landscape, (1280, 800), "test_out").do(verbosity=10)
 
 
 def test_19():
-    # Loss for army 1 when all deployed, a winning draw if javelins are pulled into reserves
+    # Loss for army 1 when all deployed, but a win if javelins are pulled into reserves
     army_1, army_2 = preamble()
-    army_1.add(-1, horse).add(0, sword).add(1, sword).add_reserves(javelin)
+    army_1.add(-1, horse).add(0, sword).add(1, sword).add(2, javelin)
     army_2.add(-1, horse).add(0, spear).add(1, spear).add(2, horse)
 
     landscape = Landscape({-1: {1: broken, inf: rough},
-                           0: {-2: rough, 2: even, inf: flat},
-                           1: {0: rough, inf: even},
-                           2: {-1: even, inf: flat}})
+                           0: {-1: rough, 2: even, inf: flat},
+                           1: {1: rough, inf: even},
+                           2: {2: even, inf: flat}})
 
     GraphicBattle(army_1, army_2, landscape, (1280, 800), "test_out").do(verbosity=10)
 
 
-test_19()
+""" Testing how many weak units are needed to defeat a strong one """
+
+
+def test_20():
+    # Spears only just victorious with an 80 power advantage
+
+    from Battle import UnitType
+    militia = UnitType("Militia", 165)
+
+    army_1, army_2 = preamble()
+    army_1.add(0, spear)
+    army_2.add(-1, militia).add(0, militia).add(1, militia)
+    do_single_terrain_battle(army_1, army_2, even)
+
+
+def test_21():
+    # Spears only just victorious with an 80 power advantage
+
+    from Battle import UnitType
+    militia = UnitType("Militia", 220)
+
+    army_1, army_2 = preamble()
+    army_1.add(0, spear).add(1, spear)
+    army_2.add(-1, militia).add(0, militia).add(1, militia).add(2, militia)
+    do_single_terrain_battle(army_1, army_2, even)
+
+
+test_17()

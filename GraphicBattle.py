@@ -257,7 +257,9 @@ class GraphicBattle(Battle):
         reps = len(self.battle_scene.frames)//10
         self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=reps)
 
+        duration = max(40, 12000/len(self.battle_scene.frames))
+
         self.battle_scene.frames[0].save(
             self.gif_name+".gif", save_all=True, append_images=self.battle_scene.frames[1:],
-            optimize=False, duration=10000/len(self.battle_scene.frames), loop=True)
+            optimize=False, duration=duration, loop=True)
         print(f"Animation saved to {self.gif_name}")

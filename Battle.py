@@ -282,10 +282,6 @@ class Army:
         return self.file_units.values()
 
     @property
-    def active(self) -> bool:
-        return any(not unit.pursuing for unit in self.deployed_units)
-
-    @property
     def defeated(self) -> bool:
         return len(self.file_units) == 0
 
@@ -370,6 +366,14 @@ class Army:
             elif unit.position > ref_pos - 1 and self.init_position < 0:
                 unit.move_to(ref_pos - 1)
 
+    def slide_file_towards_centre(self, file: int) -> None:
+        assert not self.is_central_side_file_active(file)
+        new_file = file+1 if file < 0 else file-1
+
+        self.file_units[new_file] = self.file_units[file]
+        self.file_units[new_file].file = new_file
+        del self.file_units[file]
+
     # Query
     def unit_blocking_file(self, file: int, ref_pos: float) -> Unit | None:
         """Which unit would an enemy at (file, ref_pos) first encounter, if any"""
@@ -417,6 +421,10 @@ class Army:
 
     def is_file_active(self, file: int) -> bool:
         return file in self.file_units
+
+    def is_central_side_file_active(self, file: int) -> bool:
+        assert file != 0, "Central file does not have a central side"
+        return self.is_file_active(file+1 if file < 0 else file-1)
 
 
 @define(eq=False)
@@ -581,7 +589,7 @@ class Battle:
         if verbosity >= 10:
             self.print_turn()
 
-        while self.army_1.active and self.army_2.active:
+        while not self.army_1.defeated and not self.army_2.defeated:
             self.turns += 1
             self.do_turn(verbosity)
 
@@ -593,6 +601,7 @@ class Battle:
     def do_turn(self, verbosity: int) -> None:
         self.do_fights()
         self.do_turn_move()
+        self.do_turn_reduce_files()
         self.update_status()
         if verbosity >= 100:
             self.print_turn()
@@ -603,23 +612,28 @@ class Battle:
             fight.do()
 
     def do_turn_move(self) -> None:
-        for army, file, unit in self.order_move():
-            enemy = army.other_army.unit_blocking_file(file, unit.position)
+        for unit in self.order_move():
+            army = unit.army
+            enemy = army.other_army.unit_blocking_file(unit.file, unit.position)
             if not enemy:
                 unit.move_towards(army.other_army.init_position)
             elif not unit.is_in_range_of(enemy):
                 unit.move_towards_range_of(enemy)
 
-    def order_move(self) -> list[tuple[Army, int, Unit]]:
-        """"Return a list of (army, file, unit) in order of which unit should move"""
-        complete = [(self.army_1, file, unit) for file, unit in self.army_1.file_units.items()]
-        complete += [(self.army_2, file, unit) for file, unit in self.army_2.file_units.items()]
-
-        def sort_key(args):
+    def order_move(self) -> list[Unit]:
+        def sort_key(unit):
             """Move melee units in centre first (last two are to break tie)"""
-            unit = args[2]
             return (unit.att_range, abs(unit.file), -abs(unit.position), unit.file, unit.position)
-        return sorted(complete, key=sort_key)
+
+        return sorted(self.iter_all_deployed(), key=sort_key)
+
+    def do_turn_reduce_files(self) -> None:
+        """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
+        for unit in list(self.iter_all_deployed()):
+            if unit.pursuing and unit.file != 0:
+                if unit.army.other_army.unit_blocking_file(unit.file, unit.position) is None:
+                    if not unit.army.is_central_side_file_active(unit.file):
+                        unit.army.slide_file_towards_centre(unit.file)
 
     def update_status(self) -> None:
         """ Repeat incase a unit moved/push into camp, leading to morale loss and other death"""
@@ -650,6 +664,10 @@ class Battle:
             return 1
         else:
             return 0
+
+    def iter_all_deployed(self) -> Iterable[Unit]:
+        yield from self.army_1.deployed_units
+        yield from self.army_2.deployed_units
 
     # Verbosity
     def print_turn(self) -> None:
