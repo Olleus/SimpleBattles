@@ -11,7 +11,8 @@ EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)
 
 # Terrain Global
 # UNIT_HEIGHT = 1    -    SETS THE SIZE SCALE  
-FILE_WIDTH: float = 4  # Width of file in vertical length scale (also unit aspect ratio)
+FILE_WIDTH: float = 5  # Width of file in vertical length scale (also unit aspect ratio)
+MAX_HEIGHT_INTERPOL: int = 5
 
 # Unit Globals
 SIDE_RANGE_PENALTY: float = 0.5
@@ -20,8 +21,9 @@ PURSUE_MORALE: float = -0.1
 HARASS_SLOW_DOWN: float = 1.5
 
 LOW_MORALE_POWER: float = 200
-TERRAIN_POWER: float = 100  # * O(1) * O(1)
+TERRAIN_POWER: float = 100  # * O(0.1) * O(0.1) for roughness and rigidity respectively
 NEIGHBOR_POWER: float = 10
+HEIGHT_DIF_POWER: float = 10  # *O(1) from height difference
 
 # Army Global
 LOCKED_SPEED_DIST: float = 4
@@ -42,12 +44,12 @@ class Terrain:
 
     name: str
     color: str = field(default="White")  # Must match HTML color names
-    smoothness: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
+    roughness: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
     cover: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
-    penalty: bool = field(default=False)  # If true, can smoothness can never increase value
+    penalty: bool = field(default=False)  # If true, roughness only decreases power
 
 
-DEFAULT_TERRAIN = Terrain("Undefined", "white", 0)
+DEFAULT_TERRAIN = Terrain("Undefined", "white")
 
 
 def is_inner_dict_sorted(instance, attribute, value):
@@ -65,6 +67,9 @@ class Landscape:
     terrain_map: dict[int, dict[float, Terrain]] = field(
         converter=lambda x: dict(sorted(x.items())), validator=is_inner_dict_sorted)
 
+    # {(file, pos): height} - height at other locations interpolated from these neighbors
+    height_map: dict[tuple[float, float], float] = field(default=Factory(dict))
+
     def terrain(self, file: int, pos: float) -> Terrain:
         file_map = self.terrain_map.get(file, {})
         for pos_bound, terrain in file_map.items():
@@ -72,21 +77,43 @@ class Landscape:
                 return terrain
         return DEFAULT_TERRAIN
 
-    # DONT DELETE JUST YET - WILL USE FOR HEIGHT
-    # terrain_map: dict[int, dict[float, Terrain]] = field(
-    #     converter=lambda x: dict(sorted([(k, dict(sorted(v.items()))) for k, v in x.items()])))
-    # # Converter sorts the dictionary by both file (outer) and position (inner)
+    # File is a float rather than int here for drawing purposes
+    def height(self, file: float, pos: float) -> float:
+        ref_points = self.nearest_points(file, pos)
+        num_points = len(ref_points)
 
-    # def terrain(self, file: int, pos: float) -> Terrain:
-    #     """Position of closest define terrain in file (ties broken towards the middle) """
-    #     file_map = self.file_map(file)
-    #     key = min(file_map, key=lambda x: (abs(x-pos), abs(x), x))
-    #     return file_map[key]
+        if num_points == 0:
+            return 0  # Absolute default
+        elif num_points == 1:
+            return ref_points[0][-1]  # Forced default
+        elif (file, pos) in self.height_map:
+            return self.height_map[(file, pos)]  # Don't interpolate if at an exact point
+        else:
+            # Standard case - interpolates using up to maximum number of points
+            return self.interpolated_height(file, pos, ref_points[:MAX_HEIGHT_INTERPOL])
 
-    # def file_map(self, file: int) -> dict[float, Terrain]:
-    #     """Guaranteed to never return an empty dict, even if empty dicts passed to terrain_map"""
-    #     file_map = self.terrain_map.get(file, {})
-    #     return file_map if file_map else {0: DEFAULT_TERRAIN}
+    def interpolated_height(self, file: float, pos: float,
+                            ref_points: list[tuple[float, float, float]]) -> float:
+        """Height is the weighted average of the height of the 3 nearest point, where the weight
+        is the inverse square of distance. Doing this quadratically makes nicely hills rounded"""
+        num = 0.0
+        den = 0.0
+        for x, y, h in ref_points:
+            w = 1/self.sep_square(file, pos, x, y)
+            num += w * h
+            den += w
+        return num / den
+
+    def nearest_points(self, file: float, pos: float) -> list[tuple[float, float, float]]:
+        if len(self.height_map) <= MAX_HEIGHT_INTERPOL:
+            # No need to sort if few enough points
+            return [(x, y, h) for (x, y), h in self.height_map.items()]
+
+        return sorted([(x, y, h) for (x, y), h in self.height_map.items()],
+                      key=lambda arg: self.sep_square(file, pos, arg[0], arg[1]))
+
+    def sep_square(self, file_A: float, pos_A: float, file_B: float, pos_B: float) -> float:
+        return ((file_A-file_B)*FILE_WIDTH)**2 + (pos_A-pos_B)**2
 
 
 @define(frozen=True)
@@ -96,7 +123,7 @@ class UnitType:
     power: float  # ~100
 
     rigidity: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
-    speed: float = field(default=BASE_SPEED, validator=validators.gt(0))  # O(BASE_SPEED)
+    speed: float = field(default=BASE_SPEED, validator=validators.gt(0))  # O(20)
     att_range: float = field(default=1.0, validator=validators.ge(1.0))  # O(1)
 
     def __repr__(self) -> str:
@@ -107,20 +134,18 @@ class UnitType:
 @define(eq=False)
 class Unit:
 
-    # Set at Initialisation
     army: "Army"
     unit_type: UnitType
     file: int
     position: float = field(init=False, default=0)
 
-    # Default
     morale: float = field(init=False, default=1)
     harassment: float = field(init=False, default=0)
     pursuing: bool = field(init=False, default=False)
 
     def __repr__(self) -> str:
         return f"{self.name:<10} | {self.eff_power():<5.1f}P  {100*self.morale:<5.1f}M | " \
-               f"({self.file:>2}, {self.position: .3f})"
+               f"({self.file:>2}, {self.position: .3f}, {self.height: .3f})"
 
     # Pull up attributes to Unit
     @property
@@ -147,11 +172,15 @@ class Unit:
     def terrain(self) -> Terrain:
         return self.army.landscape.terrain(self.file, self.position)
 
+    @property
+    def height(self) -> float:
+        return self.army.landscape.height(self.file, self.position)
+
     # New attributes
     @property
     def eff_speed(self) -> float:
         if self in self.army.deployed_units:
-            eff_speed = self.speed*(1+self.terrain.smoothness) / (HARASS_SLOW_DOWN**self.harassment)
+            eff_speed = self.speed*(1-self.terrain.roughness) / (HARASS_SLOW_DOWN**self.harassment)
             return min(self.army.locked_speed, eff_speed)
         else:
             return self.speed
@@ -180,9 +209,9 @@ class Unit:
             morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
             neighbour = NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
             reserves = self.army.reserve_power
-            terrain = TERRAIN_POWER * self.terrain.smoothness * self.eff_terain_rigidity
+            terrain = TERRAIN_POWER * self.terrain.roughness * self.eff_terain_rigidity
             terrain = min(0, terrain) if self.terrain.penalty else terrain
-            return self.power + morale + neighbour + reserves + terrain
+            return self.power + morale + neighbour + reserves - terrain
         else:
             return self.power
 
@@ -443,7 +472,9 @@ class Fight:
         self.do_push()
 
     def set_balance(self) -> None:
-        self.balance = 2.0 ** ((self.unit_A.eff_power() - self.unit_B.eff_power())/(2*POWER_SCALE))
+        height_dif = self.unit_A.height - self.unit_B.height
+        power_dif = self.unit_A.eff_power() - self.unit_B.eff_power() + height_dif*HEIGHT_DIF_POWER
+        self.balance = 2.0 ** (power_dif / (2*POWER_SCALE))
 
     def do_casualties_on_A(self) -> None:
         self.unit_A.change_morale(- DELTA_T * (1 - self.unit_A.terrain.cover) / self.balance)
@@ -577,7 +608,6 @@ class Battle:
     landscape: Landscape
 
     turns: int = field(init=False, default=0)  # Number of turns started
-    # Keeping record is useful for output and drawing
     curr_fights: list[Fight] = field(init=False, default=Factory(list))
 
     def __attrs_post_init__(self) -> None:
@@ -613,19 +643,16 @@ class Battle:
 
     def do_turn_move(self) -> None:
         for unit in self.order_move():
-            army = unit.army
-            enemy = army.other_army.unit_blocking_file(unit.file, unit.position)
+            enemy = unit.army.other_army.unit_blocking_file(unit.file, unit.position)
             if not enemy:
-                unit.move_towards(army.other_army.init_position)
+                unit.move_towards(unit.army.other_army.init_position)
             elif not unit.is_in_range_of(enemy):
                 unit.move_towards_range_of(enemy)
 
     def order_move(self) -> list[Unit]:
-        def sort_key(unit):
-            """Move melee units in centre first (last two are to break tie)"""
-            return (unit.att_range, abs(unit.file), -abs(unit.position), unit.file, unit.position)
-
-        return sorted(self.iter_all_deployed(), key=sort_key)
+        """Move melee units in centre first (last two are to break tie)"""
+        return sorted(self.iter_all_deployed(), key=lambda x:
+                      (x.att_range, abs(x.file), -abs(x.position), x.file, x.position))
 
     def do_turn_reduce_files(self) -> None:
         """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
@@ -647,8 +674,8 @@ class Battle:
         if self.army_1.locked_speed == self.army_2.locked_speed == inf:
             return
 
-        min_sep = min(unit.position for unit in self.army_2.deployed_units)
-        min_sep -= max(unit.position for unit in self.army_1.deployed_units)
+        min_sep = min(unit.position for unit in self.army_2.deployed_units)   # > 0
+        min_sep -= max(unit.position for unit in self.army_1.deployed_units)  # < 0
 
         if self.curr_fights or min_sep <= LOCKED_SPEED_DIST:
             self.army_1.locked_speed = inf

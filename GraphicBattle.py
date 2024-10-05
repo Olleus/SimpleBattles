@@ -1,8 +1,12 @@
 import math
+from io import BytesIO
 from itertools import chain
+
 
 from attrs import define, Factory, field
 from PIL import Image, ImageColor, ImageDraw
+import matplotlib.pyplot as plt
+import numpy as np
 
 from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, DEFAULT_TERRAIN, \
                    Landscape, Unit, Army, Fight, OneWayFight, Battle
@@ -26,6 +30,7 @@ class BattleScene:
     pixel_per_file: float = field(init=False)
     pixels_unit: tuple[float, float] = field(init=False)
     croped_res: tuple[int, int] = field(init=False)
+    font_size: int = field(init=False)
 
     background: Image.Image = field(init=False, default=None)
     canvas: Image.Image = field(init=False, default=None)
@@ -33,7 +38,7 @@ class BattleScene:
 
     def __attrs_post_init__(self) -> None:
         num_files = 1 + self.max_file - self.min_file  # Count files, not gaps
-        num_pos = (2 + 2*FILE_WIDTH + self.max_pos - self.min_pos)  # Including reserves and dead
+        num_pos = 4 + self.max_pos - self.min_pos      # Including reserves and dead
         
         file_pixel_width = self.max_screen[0] / num_files
         pos_pixel_height = self.max_screen[1] / num_pos
@@ -47,20 +52,26 @@ class BattleScene:
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
+        self.font_size = int(self.pixel_per_pos / 2)  # Allows text to fit nicely in unit rect
 
         self.draw_background()
 
     def coord_position(self, file: float, pos: float) -> tuple[float, float]:
         """Pixel position of a point in the middle of the given file at the given position"""
+        """Returns ints in float type for ease of vector manipulations later"""
         file_steps = 0.5 + file - self.min_file
-        pos_steps = 1 + FILE_WIDTH + pos - self.min_pos
+        pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
 
+    # BACKGROUND
     def draw_background(self) -> None:
         self.background = Image.new(mode="RGBA", size=self.croped_res, color="Gainsboro")
 
         for file in range(self.min_file, self.max_file + 1):
             self.draw_background_file(file)
+
+        self.draw_background_contours()
+        self.draw_background_height_labels()
 
     def draw_background_file(self, file: int) -> None:
         draw = ImageDraw.Draw(self.background)
@@ -76,76 +87,101 @@ class BattleScene:
             draw.rectangle((*top, *bot), fill=terrain.color)
             pos_prior = pos
 
+    def draw_background_contours(self) -> None:
+        buffer = self.plot_contour_graph()
+        self.draw_contour_graph_on_background(buffer)
+
+    def plot_contour_graph(self) -> BytesIO:
+        X, Y, h = self.make_vectors_for_contour_graph()
+        levels = np.arange(np.min(h), np.max(h), 0.5)
+
+        fig, ax = plt.subplots(frameon=False)
+        ax.set_axis_off()
+        fig.tight_layout()
+        ax.contour(X, Y, h, colors="Gray", linestyles="dotted", levels=levels)
+        # fig.show()
+
+        buffer = BytesIO()
+        fig.savefig(buffer, format='png')
+        return buffer
+
+    def make_vectors_for_contour_graph(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        x = np.arange(self.min_file-0.5, self.max_file+0.5, 0.05)
+        y = np.arange(self.min_pos, self.max_pos, 0.05)
+        X, Y = np.meshgrid(x, y)
+        h = np.vectorize(self.landscape.height)(X, Y)
+        return X, Y, h
+
+    def draw_contour_graph_on_background(self, buffer: BytesIO) -> None:
+        plot_img = Image.open(buffer)
+
+        left, top = self.coord_position(self.min_file-0.5, self.min_pos)
+        right, bot = self.coord_position(self.max_file+0.5, self.max_pos)
+        plot_img = plot_img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        plot_img = plot_img.resize((int(right-left), int(bot-top)))
+        self.background.paste(plot_img, (int(left), int(top)), plot_img)
+
+    def draw_background_height_labels(self) -> None:
+        draw = ImageDraw.Draw(self.background)
+        for (file, pos), height in self.landscape.height_map.items():
+            if self.min_pos <= pos <= self.max_pos:
+                x, y = self.coord_position(file, pos)
+                draw.text((x, y), f"{height}", fill="Black", font_size=self.font_size, anchor="mm")
+
+    # FRAME
     def draw_frame(self, army_1: Army, army_2: Army, fights: list[Fight], reps: int = 1) -> None:
-        self.draw_fresh_canvas()
+        self.canvas = Image.new(mode="RGBA", size=self.croped_res, color="White")
+        self.canvas.paste(self.background, (0, 0))
 
-        for unit in chain(army_1.deployed_units, army_2.deployed_units):
-            self.draw_deployed_unit(unit)
-
-        for unit in chain(army_1.reserves, army_2.reserves):
-            self.draw_reserve_unit(unit)
-
-        # Prevents multiple removed units being drawn on top of each other
-        present: set[int] = set()
-        for unit in reversed(army_1.removed):
-            if unit.file not in present:
-                present.add(unit.file)
-                self.draw_removed_unit(unit)
-
-        present = set()
-        for unit in reversed(army_2.removed):
-            if unit.file not in present:
-                present.add(unit.file)
-                self.draw_removed_unit(unit)
-
-        for fight in fights:
-            self.draw_fight(fight)
+        self.draw_battle_in_frame(army_1, army_2, fights)
+        ImageDraw.Draw(self.canvas).text(
+            (5, 5), f" {len(self.frames)}", font_size=self.font_size+8, fill="Black", anchor="lt")
 
         for _ in range(reps):
             self.frames.append(self.canvas)
 
-    def draw_fresh_canvas(self) -> None:
-        self.canvas = Image.new(mode="RGBA", size=self.croped_res, color="white")
-        self.canvas.paste(self.background, (0, 0))
+    def draw_battle_in_frame(self, army_1: Army, army_2: Army, fights: list[Fight]) -> None:
+        self.draw_all_deployed_units(army_1, army_2)
+        self.draw_army_removed_units(army_1)
+        self.draw_army_removed_units(army_2)
+        self.draw_army_reserve_units(army_1)
+        self.draw_army_reserve_units(army_2)
 
-        ImageDraw.Draw(self.canvas).text(
-                            (0, 5), f" {len(self.frames)}", font_size=24, fill="black", anchor="lt")
+        for fight in fights:
+            self.draw_fight(fight)
 
-    def draw_deployed_unit(self, unit: Unit) -> None:
-        image = self.draw_unit_image(
-            unit, unit.army.color, (self.line_width(unit, -1), self.line_width(unit, +1)))
+    def draw_all_deployed_units(self, army_1: Army, army_2: Army) -> None:
+        for unit in chain(army_1.deployed_units, army_2.deployed_units):
+            image = self.draw_unit_image(unit, unit.army.color,
+                                         (self.line_width(unit, -1), self.line_width(unit, +1)))
 
-        centre_x, centre_y = self.coord_position(unit.file, unit.position)
-        coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
-        self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
+            self.paste_unit_image(image, unit.file, unit.position)
 
-    def draw_reserve_unit(self, unit: Unit) -> None:
-        image = self.draw_unit_image(unit, unit.army.color, (FILE_EMPTY, FILE_EMPTY))
-        image = image.rotate(90, expand=True)
+    def draw_army_removed_units(self, army: Army) -> None:
+        # Prevents multiple removed units being drawn on top of each other
+        present: set[int] = set()
+        for unit in reversed(army.removed):
+            if unit.file not in present:
+                present.add(unit.file)
 
-        file = 0.5 - len(unit.army.reserves)/2 + unit.army.reserves.index(unit)
-        centre_x = self.croped_res[0]/2 + file * (2-UNIT_FILE_WIDTH) * self.pixel_per_pos
+                image = self.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY))
+                position = unit.army.init_position
+                position += 2 if position > 0 else -2
+                self.paste_unit_image(image, unit.file, position)
 
-        position = unit.army.init_position
-        position += (1+FILE_WIDTH) / 2 if position > 0 else - (1+FILE_WIDTH) / 2
-        _, centre_y = self.coord_position(0, position)
+    def draw_army_reserve_units(self, army: Army) -> None:
+        for slot, unit in enumerate(reversed(army.reserves)):
+            image = self.draw_unit_image(unit, unit.army.color, (FILE_EMPTY, FILE_EMPTY),
+                                         bkgd="White")
+            position = unit.army.init_position
+            position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
+            file = (self.min_file + self.max_file) / 2
+            self.paste_unit_image(image, file, position)
 
-        coord = (centre_x - self.pixels_unit[1]//2, centre_y - self.pixels_unit[0]//2)
-        self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
-
-    def draw_removed_unit(self, unit: Unit) -> None:
-        image = self.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY))
-
-        position = unit.army.init_position
-        position += (1 + FILE_WIDTH) if position > 0 else -(1 + FILE_WIDTH)
-
-        centre_x, centre_y = self.coord_position(unit.file, position)
-        coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
-        self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
-
-    def draw_unit_image(self, unit: Unit, color: str, widths: tuple[int, int]) -> Image.Image:
+    def draw_unit_image(self, unit: Unit, color: str, widths: tuple[int, int],
+                        bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
-        image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)))
+        image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)), color=bkgd)
         draw = ImageDraw.Draw(image)
         
         # Draw Rectangle
@@ -155,10 +191,15 @@ class BattleScene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=widths[1])  # Right
         
         # Draw Text
-        string = f"{unit.name} ({unit.eff_power():.0f}) {100*unit.morale:.0f}%"
-        draw.text((x//2, y//2), string, fill=color, font_size=14, anchor="mm")
+        string = f"{unit.name} {100*unit.morale:.0f}%: {unit.eff_power():.0f}"
+        draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
         return image
+
+    def paste_unit_image(self, image: Image.Image, file: float, position: float) -> None:
+        centre_x, centre_y = self.coord_position(file, position)
+        coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
+        self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
 
     def line_width(self, unit: Unit, side: int) -> int:
         # Change line thickness on edge of unit rectangle depanding on state of flanks
@@ -230,7 +271,7 @@ class BattleScene:
 
 @define
 class GraphicBattle(Battle):
-    """Same as parent, but draws a frame every turn and then animates them"""
+    """Same as parent, but draws a frame every turn and then saves them as a gif"""
     max_screen: tuple[int, int]
     gif_name: str
     battle_scene: BattleScene = field(init=False)
@@ -253,13 +294,12 @@ class GraphicBattle(Battle):
 
     def do(self, verbosity: int) -> None:
         super().do(verbosity)
+        frames = self.battle_scene.frames
 
-        reps = len(self.battle_scene.frames)//10
-        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=reps)
+        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=len(frames)//10)
+        time = max(40, 12000/len(frames))
 
-        duration = max(40, 12000/len(self.battle_scene.frames))
+        frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:], duration=time,
+                       optimize=True, loop=True)
 
-        self.battle_scene.frames[0].save(
-            self.gif_name+".gif", save_all=True, append_images=self.battle_scene.frames[1:],
-            optimize=False, duration=duration, loop=True)
         print(f"Animation saved to {self.gif_name}")

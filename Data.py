@@ -2,14 +2,14 @@ from Battle import BASE_SPEED, Terrain, UnitType
 
 """    TERRAIN    """
 
-flat = Terrain("Flat", "LawnGreen", smoothness=0.15)
-even = Terrain("Even", "GreenYellow", smoothness=0)
-rough = Terrain("Rough", "YellowGreen", smoothness=-0.1)
-broken = Terrain("Broken", "Khaki", smoothness=-0.2)
-ragged = Terrain("Ragged", "BurlyWood", smoothness=-0.3)
+flat = Terrain("Flat", "LawnGreen", roughness=-0.15)
+even = Terrain("Even", "GreenYellow", roughness=0)
+rough = Terrain("Rough", "YellowGreen", roughness=0.1)
+broken = Terrain("Broken", "Khaki", roughness=0.2)
+ragged = Terrain("Ragged", "BurlyWood", roughness=0.3)
 
-forest = Terrain("Forest", "ForestGreen", smoothness=-0.6, cover=0.5)
-river = Terrain("River", "DodgerBlue", smoothness=-0.8, cover=-0.5, penalty=True)
+forest = Terrain("Forest", "ForestGreen", roughness=0.6, cover=0.5)
+river = Terrain("River", "DodgerBlue", roughness=0.8, cover=-0.5, penalty=True)
 
 """    UNIT TYPE    """
 
