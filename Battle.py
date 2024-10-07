@@ -5,6 +5,8 @@ from math import inf
 from attrs import define, Factory, field, validators
 from typing import Iterable, Self
 
+import Config
+
 # Floating point error prevention
 POS_DEC_DIG: int = 3
 EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)
@@ -12,7 +14,7 @@ EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)
 # Terrain Global
 # UNIT_HEIGHT = 1    -    SETS THE SIZE SCALE  
 FILE_WIDTH: float = 5  # Width of file in vertical length scale (also unit aspect ratio)
-MAX_HEIGHT_INTERPOL: int = 5
+MAX_HEIGHT_INTERPOL: int = 10
 
 # Unit Globals
 SIDE_RANGE_PENALTY: float = 0.5
@@ -36,7 +38,7 @@ MIN_RESERVE_DIST: float = 0.5
 
 # Fight Global
 POWER_SCALE: float = 50  # This much power difference results in a 2:1 casualty ratio
-DELTA_T: float = 0.005  # 1 / DELTA_T is roughly num of turns in battle
+DELTA_T: float = Config.DELTA_T
 
 
 @define(frozen=False)

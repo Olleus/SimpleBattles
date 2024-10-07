@@ -8,6 +8,7 @@ from PIL import Image, ImageColor, ImageDraw
 import matplotlib.pyplot as plt
 import numpy as np
 
+import Config
 from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, DEFAULT_TERRAIN, \
                    Landscape, Unit, Army, Fight, OneWayFight, Battle
 
@@ -134,8 +135,10 @@ class BattleScene:
         self.canvas.paste(self.background, (0, 0))
 
         self.draw_battle_in_frame(army_1, army_2, fights)
-        ImageDraw.Draw(self.canvas).text(
-            (5, 5), f" {len(self.frames)}", font_size=self.font_size+8, fill="Black", anchor="lt")
+
+        if Config.FRAME_COUNTER:
+            ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
+                                             font_size=self.font_size+8, fill="Black", anchor="lt")
 
         for _ in range(reps):
             self.frames.append(self.canvas)
@@ -300,6 +303,19 @@ class GraphicBattle(Battle):
         time = max(40, 12000/len(frames))
 
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:], duration=time,
-                       optimize=True, loop=True)
+                       loop=True)
 
         print(f"Animation saved to {self.gif_name}")
+
+    def do_to_buffer(self) -> BytesIO:
+        # Version of above useful for integrating into pyscript and displaying in browser
+        super().do(0)
+
+        frames = self.battle_scene.frames
+        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=len(frames)//10)
+        time = max(40, 12000/len(frames))
+
+        stream = BytesIO()
+        frames[0].save(stream, format="GIF", save_all=True, append_images=frames[1:],
+                       duration=time, loop=True)
+        return stream

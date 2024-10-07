@@ -30,4 +30,4 @@ height = {(-0.5, -3.0): 5.0,
 
 landscape = Landscape(terrain, height)
 
-GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_hill").do(verbosity=10)
+GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_hill").do_to_buffer()

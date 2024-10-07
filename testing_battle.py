@@ -271,4 +271,4 @@ def test_24():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(verbosity=10)
 
 
-test_24()
+test_1()
