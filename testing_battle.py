@@ -192,10 +192,18 @@ def test_19():
     GraphicBattle(army_1, army_2, landscape, (720, 480), "testing_out").do(verbosity=10)
 
 
+def test_20():
+    # 3+2 loses to 5+0 when deployed in the centre, but wins when deployed at the edge
+    army_1, army_2 = preamble()
+    army_1.add(-2, spear).add_reserves(spear, spear, spear, spear)
+    army_2.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
+    do_single_terrain_battle(army_1, army_2, even)
+
+
 """ Testing how many weak units are needed to defeat a strong one """
 
 
-def test_20():
+def test_21():
     # Spears only just victorious with an 135 power advantage
 
     from Battle import UnitType
@@ -207,7 +215,7 @@ def test_20():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_21():
+def test_22():
     # Spears only just victorious with an 80 power advantage
     from Battle import UnitType
     militia = UnitType("Militia", 220)
@@ -218,7 +226,7 @@ def test_21():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_22():
+def test_23():
     # Spears only just victorious with an 100 power advantage
     from Battle import UnitType
     militia = UnitType("Militia", 200)
@@ -233,7 +241,7 @@ def test_22():
 """ Testing height """
 
 
-def test_23():
+def test_24():
     # Minimum heigh difference for sword to beat pike
     army_1, army_2 = preamble()
     army_1.add(0, sword)
@@ -244,7 +252,7 @@ def test_23():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_24():
+def test_25():
     # Army_1 wins with height map, loses if it's removed
     # Also check that contours are drawn properly
     army_1, army_2 = preamble()
@@ -271,4 +279,4 @@ def test_24():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(verbosity=10)
 
 
-test_1()
+test_20()

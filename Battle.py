@@ -172,10 +172,14 @@ class Unit:
 
     @property
     def terrain(self) -> Terrain:
+        if not self.army.landscape:
+            return DEFAULT_TERRAIN
         return self.army.landscape.terrain(self.file, self.position)
 
     @property
     def height(self) -> float:
+        if not self.army.landscape:
+            return 0
         return self.army.landscape.height(self.file, self.position)
 
     # New attributes
@@ -207,15 +211,20 @@ class Unit:
         return abs(self.position - position)
 
     def eff_power(self) -> float:
+        if not self.army.other_army or not self.army.landscape:
+            # If things are not fully set up, eff power is just power
+            return self.power
+
+        morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
         if self in self.army.deployed_units:
-            morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
             neighbour = NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
             reserves = self.army.reserve_power
-            terrain = TERRAIN_POWER * self.terrain.roughness * self.eff_terain_rigidity
-            terrain = min(0, terrain) if self.terrain.penalty else terrain
-            return self.power + morale + neighbour + reserves - terrain
+            terrain = -TERRAIN_POWER * self.terrain.roughness * self.eff_terain_rigidity
+            terrain = max(0, terrain) if self.terrain.penalty else terrain
+            height = self.height * HEIGHT_DIF_POWER
+            return self.power + morale + neighbour + reserves + terrain + height
         else:
-            return self.power
+            return self.power + morale
 
     def state_neighboring_files(self) -> int:
         """alone: -1, end of line: 0 (if open: -3), centre: 1, one flank open: -2, both open: -5"""
@@ -272,11 +281,16 @@ class Unit:
 
         if self.morale <= 0 or self.position == self.army.init_position:
             self.army.remove_unit(self)
+            self.pursuing = False
 
         elif self.position == self.army.other_army.init_position:
             if not self.pursuing:
                 self.army.other_army.change_morale(PURSUE_MORALE)
                 self.pursuing = True
+
+        else:
+            # For a unit that was pursuing, but then was redeployed somewhere else
+            self.pursuing = False
 
 
 @define(eq=False)
@@ -291,8 +305,8 @@ class Army:
 
     init_position: float = field(init=False, default=0)
     locked_speed: float = field(init=False, default=inf)
-    landscape: Landscape = field(init=False)
-    other_army: Self = field(init=False)
+    landscape: Landscape = field(init=False, default=None)
+    other_army: Self = field(init=False, default=None)
 
     def __str__(self) -> str:
         string = f"{self.name} (init_pos={self.init_position:.0f})"
@@ -334,18 +348,19 @@ class Army:
             self.reserves.append(Unit(self, unit_type, 0))
         return self
 
-    def set_up(self, top: bool, landscape: Landscape, other_army: Self) -> None:
+    def get_starting_distance(self) -> float:
+        return max(max(1+x.att_range, 3*x.speed/BASE_SPEED) for x in self.deployed_units)
+
+    def set_up(self, init_pos: float, landscape: Landscape, other_army: Self) -> None:
         assert len(self.file_units), "Cannot setup an army without any deployed units"
         self.file_units = dict(sorted(self.file_units.items()))
-        self.set_up_init_position(top)
+        self.set_init_position(init_pos)
         self.landscape = landscape
         self.locked_speed = min(unit.eff_speed for unit in self.deployed_units)
         self.other_army = other_army
 
-    def set_up_init_position(self, top: bool) -> None:
-        self.init_position = max(max(1+x.att_range, 3*x.speed/BASE_SPEED)
-                                 for x in self.deployed_units)
-        self.init_position *= -1 if top else 1
+    def set_init_position(self, init_position: float) -> None:
+        self.init_position = init_position
         for unit in self.units:
             unit.position = self.init_position
 
@@ -355,7 +370,7 @@ class Army:
             unit.update_status()
 
     def change_morale(self, change: float) -> None:
-        for unit in self.deployed_units:
+        for unit in chain(self.deployed_units, self.reserves):
             if not unit.pursuing:
                 unit.change_morale(change)
 
@@ -474,9 +489,7 @@ class Fight:
         self.do_push()
 
     def set_balance(self) -> None:
-        height_dif = self.unit_A.height - self.unit_B.height
-        power_dif = self.unit_A.eff_power() - self.unit_B.eff_power() + height_dif*HEIGHT_DIF_POWER
-        self.balance = 2.0 ** (power_dif / (2*POWER_SCALE))
+        self.balance = 2.0 ** ((self.unit_A.eff_power()-self.unit_B.eff_power()) / (2*POWER_SCALE))
 
     def do_casualties_on_A(self) -> None:
         self.unit_A.change_morale(- DELTA_T * (1 - self.unit_A.terrain.cover) / self.balance)
@@ -577,8 +590,8 @@ class FightAssigner:
                     abs(target.file),
                     unit.file, target.file, unit.position)  # Breaks ties in all cases
 
-        score, unit, target = max((sort_key(att, x), att, x) for att in self.potentials
-                                  for x in self.potentials[att])
+        score, unit, target = max((sort_key(att, x), att, x)
+                                  for att in self.potentials for x in self.potentials[att])
 
         self.assignments[unit] = target
         del self.potentials[unit]
@@ -614,8 +627,9 @@ class Battle:
 
     def __attrs_post_init__(self) -> None:
         """Pass refernces down the chain as required"""
-        self.army_1.set_up(True, self.landscape, self.army_2)
-        self.army_2.set_up(False, self.landscape, self.army_1)
+        init_pos = max(self.army_1.get_starting_distance(), self.army_2.get_starting_distance())
+        self.army_1.set_up(-init_pos, self.landscape, self.army_2)
+        self.army_2.set_up(init_pos, self.landscape, self.army_1)
 
     def do(self, verbosity: int) -> None:
         if verbosity >= 10:
