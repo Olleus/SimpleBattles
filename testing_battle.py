@@ -181,7 +181,7 @@ def test_18():
 def test_19():
     # Loss for army 1 when all deployed, but a win if javelins are pulled into reserves
     army_1, army_2 = preamble()
-    army_1.add(-1, horse).add(0, sword).add(1, sword).add_reserves(javelin)
+    army_1.add(-1, horse).add(0, sword).add(1, sword).add(2, javelin)
     army_2.add(-1, horse).add(0, spear).add(1, spear).add(2, horse)
 
     landscape = Landscape({-1: {1: broken, inf: rough},
@@ -195,15 +195,24 @@ def test_19():
 def test_20():
     # 3+2 loses to 5+0 when deployed in the centre, but wins when deployed at the edge
     army_1, army_2 = preamble()
-    army_1.add(-2, spear).add_reserves(spear, spear, spear, spear)
-    army_2.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
+    army_1.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
+    army_2.add(-1, spear).add(0, spear).add(1, spear).add_reserves(spear, spear)
+    do_single_terrain_battle(army_1, army_2, even)
+
+
+def test_21():
+    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed)
+    # Does not hold for small armies: 2+1 loses to 3+0
+    army_1, army_2 = preamble()
+    army_1.add(-2, spear).add(-1, spear).add(0, spear).add_reserves(spear, spear)
+    army_2.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add_reserves(spear)
     do_single_terrain_battle(army_1, army_2, even)
 
 
 """ Testing how many weak units are needed to defeat a strong one """
 
 
-def test_21():
+def test_22():
     # Spears only just victorious with an 135 power advantage
 
     from Battle import UnitType
@@ -215,7 +224,7 @@ def test_21():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_22():
+def test_23():
     # Spears only just victorious with an 80 power advantage
     from Battle import UnitType
     militia = UnitType("Militia", 220)
@@ -226,7 +235,7 @@ def test_22():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_23():
+def test_24():
     # Spears only just victorious with an 100 power advantage
     from Battle import UnitType
     militia = UnitType("Militia", 200)
@@ -241,7 +250,7 @@ def test_23():
 """ Testing height """
 
 
-def test_24():
+def test_25():
     # Minimum heigh difference for sword to beat pike
     army_1, army_2 = preamble()
     army_1.add(0, sword)
@@ -252,7 +261,7 @@ def test_24():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_25():
+def test_26():
     # Army_1 wins with height map, loses if it's removed
     # Also check that contours are drawn properly
     army_1, army_2 = preamble()
@@ -279,4 +288,4 @@ def test_25():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(verbosity=10)
 
 
-test_20()
+test_21()

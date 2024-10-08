@@ -1,6 +1,6 @@
 from functools import cache
 from itertools import chain
-from math import inf
+from math import inf, log
 
 from attrs import define, Factory, field, validators
 from typing import Iterable, Self
@@ -32,7 +32,8 @@ LOCKED_SPEED_DIST: float = 4
 FILE_EMPTY: int = 0
 FILE_VULNERABLE: int = -2
 FILE_SUPPORTED: int = 1
-POWER_FROM_RESERVES: float = 0.10
+RESERVES_POWER: float = 0.13
+RESERVES_SOFT_CAP: float = 500
 RESERVE_DIST_BEHIND: float = 2
 MIN_RESERVE_DIST: float = 0.5
 
@@ -332,7 +333,11 @@ class Army:
 
     @property
     def reserve_power(self) -> float:
-        return min(sum(unit.power for unit in self.reserves)*POWER_FROM_RESERVES, 2*POWER_SCALE)
+        """reserve_power ~= RESERVES_POWER*total when total far below soft cap, with a drop of:
+        ~30% when total = soft_cap, 50% when total ~= 2.5*soft_cap
+        """
+        total = sum(unit.power for unit in self.reserves)
+        return RESERVES_POWER * RESERVES_SOFT_CAP * log(1 + total/RESERVES_SOFT_CAP)
 
     @cache
     def min_max_positions(self) -> list[float]:

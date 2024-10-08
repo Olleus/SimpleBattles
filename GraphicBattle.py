@@ -168,7 +168,7 @@ class BattleScene:
                 present.add(unit.file)
 
                 image = self.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY))
-                position = unit.army.init_position
+                position = unit.army.init_position - 0.01  # offset needed because of rouning errors
                 position += 2 if position > 0 else -2
                 self.paste_unit_image(image, unit.file, position)
 
