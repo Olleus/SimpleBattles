@@ -1,12 +1,12 @@
-import math
+from math import inf, sqrt
 from io import BytesIO
 from itertools import chain
 
 
-from attrs import define, Factory, field
-from PIL import Image, ImageColor, ImageDraw
 import matplotlib.pyplot as plt
 import numpy as np
+from attrs import define, Factory, field
+from PIL import Image, ImageColor, ImageDraw
 
 import Config
 from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, DEFAULT_TERRAIN, \
@@ -76,11 +76,11 @@ class BattleScene:
 
     def draw_background_file(self, file: int) -> None:
         draw = ImageDraw.Draw(self.background)
-        pos_prior = -math.inf
+        pos_prior = -inf
 
         file_map = self.landscape.terrain_map.get(file, {})
-        if math.inf not in file_map:
-            file_map[math.inf] = DEFAULT_TERRAIN
+        if inf not in file_map:
+            file_map[inf] = DEFAULT_TERRAIN
 
         for pos, terrain in file_map.items():
             top = self.coord_position(file-0.5, max(pos_prior, self.min_pos))
@@ -261,7 +261,7 @@ class BattleScene:
     def draw_arrowhead(self, pos: list[float], origin: list[float], color: tuple[int, int, int, int]
                        ) -> None:
         vec = pos[0] - origin[0], pos[1] - origin[1]
-        norm_len = self.pixel_per_pos * ARROWHEAD_SIZE / math.sqrt(vec[0]**2 + vec[1]**2)
+        norm_len = self.pixel_per_pos * ARROWHEAD_SIZE / sqrt(vec[0]**2 + vec[1]**2)
 
         back_step = vec[0]*norm_len, vec[1]*norm_len
         side_step = -vec[1]*norm_len/2, vec[0]*norm_len/2
