@@ -10,40 +10,37 @@ from attrs import define, Factory, field, validators
 
 import Config
 
-# Floating point error prevention
-POS_DEC_DIG: int = 3
-EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)
+# Internal computation
+POS_DEC_DIG: int = 3             # Position is rounded to this many decimal places
+EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)  # Max error introduced by the above
+DELTA_T: float = Config.DELTA_T  # Used to scale how much movement / casualties are done per 'tick'
+MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
 
-# Terrain Global
-# UNIT_HEIGHT = 1    -    SETS THE SIZE SCALE  
-FILE_WIDTH: float = 5  # Width of file in vertical length scale (also unit aspect ratio)
-MAX_HEIGHT_INTERPOL: int = 10
+# Distance
+# UNIT_HEIGHT = 1                # Height of all units
+FILE_WIDTH: float = 5            # Width of file
+RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
+MIN_DEPLOY_DIST: float = 0.5     # Closest to edge of the map that reserves will deploy
+FAST_DISTANCE: float = 4         # Distance from enemy at which units in LINE become FAST
+SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
-# Unit Globals
-SIDE_RANGE_PENALTY: float = 0.5
-BASE_SPEED: float = 20
-PURSUE_MORALE: float = -0.1
-HARASS_SLOW_DOWN: float = 1.5
-FAST_DISTANCE: float = 4
-HALT_POWER_GRADIENT: float = 5
+# Movement
+BASE_SPEED: float = 20           # Default unit speed
+HARASS_SLOW_DOWN: float = 1.5    # Maximum factor by which a unit's speed is reduced when under fire
+HALT_POWER_GRADIENT: float = 20  # Units in HOLD stop moving when power drops at this rate
+PURSUE_MORALE: float = -0.2      # Morale loss inflicted when a unit starts pursing off the map
 
-LOW_MORALE_POWER: float = 200  # * [0, 1] from morale
-TERRAIN_POWER: float = 200  # * O(0.1) * O(0.1) for roughness and rigidity respectively
-NEIGHBOR_POWER: float = 10  # * O(2) from state of adjacent files
-HEIGHT_DIF_POWER: float = 10  # * O(0.1) from height difference
-
-# Army Global
-FILE_EMPTY: int = 0
-FILE_VULNERABLE: int = -2
-FILE_SUPPORTED: int = 1
-RESERVES_POWER: float = 0.13
-RESERVES_SOFT_CAP: float = 500
-RESERVE_DIST_BEHIND: float = 2
-MIN_SAFE_DEPLOY_DIST: float = 0.5
-
-# Fight Global
-POWER_SCALE: float = 50  # This much power difference results in a 2:1 casualty ratio
-DELTA_T: float = Config.DELTA_T
+# Power
+POWER_SCALE: float = 50          # This much power difference results in a 2:1 casualty ratio
+LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
+TERRAIN_POWER: float = 200       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity
+HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
+FILE_OWN: float = -10            # Power for being on a file (<0 to cancel out some FILE_SUPPORTED)
+FILE_EMPTY: float = 0            # Power for having an empty adjacent file
+FILE_VULNERABLE: float = -20     # Power for having an adjacent file with a dangerously close enemy
+FILE_SUPPORTED: float = 10       # Power for having an adjacent file protected by a friendly unit
+RESERVES_POWER: float = 0.15     # Rate at which reserves give their own power to deployed unit
+RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
 
 
 class Stance(Enum):
@@ -141,7 +138,7 @@ class UnitType:
     power: float  # O(100)
 
     rigidity: float = field(default=0, validator=validators.gt(-1))  # O(1)
-    speed: float = field(default=BASE_SPEED, validator=validators.gt(0))  # O(20)
+    speed: float = field(default=1.1, validator=validators.gt(0))  # O(1)
     att_range: float = field(default=1.0, validator=validators.ge(1))  # O(1)
 
     def __repr__(self) -> str:
@@ -178,7 +175,7 @@ class Unit:
 
     @property
     def speed(self) -> float:
-        return self.unit_type.speed
+        return self.unit_type.speed * BASE_SPEED
 
     @property
     def rigidity(self) -> float:
@@ -203,7 +200,7 @@ class Unit:
 
     @property
     def eff_terrain_rigidity(self) -> float:
-        return self.rigidity + (self.speed/BASE_SPEED - 1)
+        return self.rigidity + (self.speed - 1)
 
     @property
     def eff_speed(self) -> float:
@@ -236,17 +233,17 @@ class Unit:
         if self not in self.army.deployed_units:
             return self.power + morale  # For reserve or defeated units
 
-        neighbour = NEIGHBOR_POWER * self.get_state_of_adjacent_files() * (1+self.rigidity)
-        reserves = self.army.reserve_power
         terrain = -TERRAIN_POWER * self.terrain.roughness * self.eff_terrain_rigidity
         terrain = min(0, terrain) if self.terrain.penalty else terrain
         height = self.height * HEIGHT_DIF_POWER
-        return self.power + morale + neighbour + reserves + terrain + height
+        neighbour = self.get_state_of_adjacent_files() * (1+self.rigidity)
+        reserves = self.army.reserve_power
+        return self.power + morale + terrain + height + neighbour + reserves
 
-    def get_state_of_adjacent_files(self) -> int:
+    def get_state_of_adjacent_files(self) -> float:
         """alone: -1, end of line: 0 (if open: -3), centre: 1, one flank open: -2, both open: -5"""
         if self in self.army.deployed_units:
-            state = -1
+            state = FILE_OWN
             state += self.army.get_state_of_file(self.file - 1, self.position)
             state += self.army.get_state_of_file(self.file + 1, self.position)
             return state
@@ -300,7 +297,7 @@ class Unit:
             self.cap_position()        
 
     def is_major_power_drop(self, old_pos: float, old_power: float) -> bool:
-        if self.get_dist_to(self.army.init_position) > MIN_SAFE_DEPLOY_DIST:
+        if self.get_dist_to(self.army.init_position) > MIN_DEPLOY_DIST:
             grad = (old_power - self.get_eff_power()) / self.get_dist_to(old_pos)
             return grad > HALT_POWER_GRADIENT
         return False
@@ -424,7 +421,7 @@ class Army:
 
     # GETTERS
     def get_army_reach(self) -> float:
-        return max(max(1+x.att_range, 1+2*x.speed/BASE_SPEED) for x in self.deployed_units)
+        return 1 + max((x.att_range + 2*x.speed for x in self.deployed_units), default=3)
 
     def get_slowest_eff_speed(self) -> float:
         return min(unit.eff_speed for unit in self.deployed_units
@@ -451,7 +448,7 @@ class Army:
         else:
             return None
 
-    def get_state_of_file(self, file: int, ref_pos: float) -> int:
+    def get_state_of_file(self, file: int, ref_pos: float) -> float:
         """Who has units in that file and, if both, who is closer to the reference position"""
         self_pre = self.is_file_active(file)
         enem_pre = self.other_army.is_file_active(file)
@@ -514,9 +511,9 @@ class Army:
     def position_to_deploy_reserve_at(self, ref_pos: float) -> float:
         # Give some breathing room to reserve units when deployed
         if self.init_position < 0:
-            return max(ref_pos - RESERVE_DIST_BEHIND, self.init_position + MIN_SAFE_DEPLOY_DIST)
+            return max(ref_pos - RESERVE_DIST_BEHIND, self.init_position + MIN_DEPLOY_DIST)
         else:
-            return min(ref_pos + RESERVE_DIST_BEHIND, self.init_position - MIN_SAFE_DEPLOY_DIST)
+            return min(ref_pos + RESERVE_DIST_BEHIND, self.init_position - MIN_DEPLOY_DIST)
 
     def move_unit_safely_away_from_pos(self, file: int, ref_pos: float) -> None:
         # Prevents overlapping units, jumps towards home as necessary

@@ -118,12 +118,12 @@ class BattleScene:
 
     def plot_contour_graph(self) -> BytesIO:
         X, Y, h = self.make_vectors_for_contour_graph()
-        levels = np.arange(np.min(h), np.max(h), 0.5)
+        levels = np.arange(np.min(h), np.max(h), 1)
 
         fig, ax = plt.subplots(frameon=False)
         ax.set_axis_off()
         fig.tight_layout()
-        ax.contour(X, Y, h, colors="Gray", linestyles="dotted", levels=levels)
+        ax.contour(X, Y, h, colors="DimGray", linestyles="dotted", levels=levels)
         # fig.show()
 
         buffer = BytesIO()
@@ -204,7 +204,7 @@ class BattleScene:
             file = (self.min_file + self.max_file) / 2
             self.paste_unit_image(image, file, position)
 
-    def draw_unit_image(self, unit: Unit, color: str, widths: tuple[int, int],
+    def draw_unit_image(self, unit: Unit, color: str, widths: tuple[float, float],
                         bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)), color=bkgd)
