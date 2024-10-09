@@ -7,23 +7,23 @@ from Battle import Landscape, Terrain, UnitType
 """    UNIT TYPE    """
 #######################
 
-sword = UnitType("Sword", 300, 0)
-spear = UnitType("Spear", 310, 0.3)
-pike = UnitType("Pike", 335, 0.8)
+sword = UnitType("Sword", 290, 0)
+spear = UnitType("Spear", 300, 0.2)
+pike = UnitType("Pike", 320, 0.6)
 
-irreg = UnitType("Irregular", 285, -0.2, speed=1.1, att_range=1.3)
-javelin = UnitType("Javelin", 260, -0.5, speed=1.25, att_range=2)
-archer = UnitType("Archer", 240, -0.3, att_range=4)
+irreg = UnitType("Irregular", 270, -0.3, speed=1.1, att_range=1.3)
+javelin = UnitType("Javelin", 250, -0.5, att_range=2)
+archer = UnitType("Archer", 235, -0.3, att_range=4.5)
 
-h_horse = UnitType("Heavy Cav", 290, -0.2, speed=2)
-l_horse = UnitType("Light Cav", 260, -0.6, speed=2.2, att_range=3)
+h_horse = UnitType("Heavy Cav", 290, -0.2, speed=2)                 # eff_ter_rgd = 0.8
+l_horse = UnitType("Light Cav", 240, -0.6, speed=2.3, att_range=3)  # eff_ter_rgd = 0.7
 
 
 #####################
 """    TERRAIN    """
 #####################
 
-smooth = Terrain("Smooth", "LawnGreen", roughness=-0.1)
+smooth = Terrain("Smooth", "LawnGreen", roughness=-0.2)
 even = Terrain("Even", "GreenYellow", roughness=0)
 rough = Terrain("Rough", "YellowGreen", roughness=0.1)
 broken = Terrain("Broken", "Khaki", roughness=0.2)
@@ -110,11 +110,11 @@ class PresetLandscapes:
                    1: {0: rough, 3: even, inf: smooth},
                    2: {1: even, inf: smooth}}
 
-        height: dict[tuple[float, float], float] = {(-0.5, -3): 4,
-                                                    (0.5, -3): 3,
-                                                    (0, 4): 1,
-                                                    (-1.75, 2): 0,
-                                                    (1.75, 2): 0}
+        height: dict[tuple[float, float], float] = {(-0.5, -4): 4,
+                                                    (0.5, -4): 3,
+                                                    (0, 4): 0,
+                                                    (-1.45, 2): -1,
+                                                    (1.45, 2): -1}
 
         return Landscape(terrain, height)
 

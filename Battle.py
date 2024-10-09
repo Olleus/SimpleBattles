@@ -27,20 +27,19 @@ SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
 HARASS_SLOW_DOWN: float = 1.5    # Maximum factor by which a unit's speed is reduced when under fire
-HALT_POWER_GRADIENT: float = 20  # Units in HOLD stop moving when power drops at this rate
+HALT_POWER_GRADIENT: float = 10  # Units in HOLD stop moving when power drops at this rate
 PURSUE_MORALE: float = -0.2      # Morale loss inflicted when a unit starts pursing off the map
 
 # Power
 POWER_SCALE: float = 50          # This much power difference results in a 2:1 casualty ratio
 LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
-TERRAIN_POWER: float = 200       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity
+TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity
 HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
-FILE_OWN: float = -10            # Power for being on a file (<0 to cancel out some FILE_SUPPORTED)
 FILE_EMPTY: float = 0            # Power for having an empty adjacent file
-FILE_VULNERABLE: float = -20     # Power for having an adjacent file with a dangerously close enemy
 FILE_SUPPORTED: float = 10       # Power for having an adjacent file protected by a friendly unit
-RESERVES_POWER: float = 0.15     # Rate at which reserves give their own power to deployed unit
-RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
+FILE_VULNERABLE: float = -20     # Power for having an adjacent file with a dangerously close enemy
+RESERVES_POWER: float = 0.1      # Rate at which reserves give their own power to deployed unit
+RESERVES_SOFT_CAP: float = 500   # Scale which determines how sharply the above diminishes
 
 
 class Stance(Enum):
@@ -138,7 +137,7 @@ class UnitType:
     power: float  # O(100)
 
     rigidity: float = field(default=0, validator=validators.gt(-1))  # O(1)
-    speed: float = field(default=1.1, validator=validators.gt(0))  # O(1)
+    speed: float = field(default=1, validator=validators.gt(0))  # O(1)
     att_range: float = field(default=1.0, validator=validators.ge(1))  # O(1)
 
     def __repr__(self) -> str:
@@ -175,7 +174,7 @@ class Unit:
 
     @property
     def speed(self) -> float:
-        return self.unit_type.speed * BASE_SPEED
+        return self.unit_type.speed
 
     @property
     def rigidity(self) -> float:
@@ -236,19 +235,13 @@ class Unit:
         terrain = -TERRAIN_POWER * self.terrain.roughness * self.eff_terrain_rigidity
         terrain = min(0, terrain) if self.terrain.penalty else terrain
         height = self.height * HEIGHT_DIF_POWER
-        neighbour = self.get_state_of_adjacent_files() * (1+self.rigidity)
+        neighbour = self.get_state_of_adjacent_files() * (1 + self.rigidity)
         reserves = self.army.reserve_power
         return self.power + morale + terrain + height + neighbour + reserves
 
     def get_state_of_adjacent_files(self) -> float:
-        """alone: -1, end of line: 0 (if open: -3), centre: 1, one flank open: -2, both open: -5"""
-        if self in self.army.deployed_units:
-            state = FILE_OWN
-            state += self.army.get_state_of_file(self.file - 1, self.position)
-            state += self.army.get_state_of_file(self.file + 1, self.position)
-            return state
-        else:
-            return 0
+        return (self.army.get_state_of_file(self.file - 1, self.position) +
+                self.army.get_state_of_file(self.file + 1, self.position))
 
     # SETTERS
     def change_stance_from_enemy_distance(self, dist: float) -> None:
@@ -289,11 +282,11 @@ class Unit:
 
     def _move_towards_pos(self, speed: float, target: float, offset: float) -> None:
         if self.position < target - offset:
-            self.position = min(self.position + speed*DELTA_T, target - offset)
+            self.position = min(self.position + speed*BASE_SPEED*DELTA_T, target - offset)
             self.cap_position()
 
         elif self.position > target + offset:
-            self.position = max(self.position - speed*DELTA_T, target + offset)
+            self.position = max(self.position - speed*BASE_SPEED*DELTA_T, target + offset)
             self.cap_position()        
 
     def is_major_power_drop(self, old_pos: float, old_power: float) -> bool:
@@ -415,9 +408,9 @@ class Army:
 
     def set_init_position(self, init_position: float) -> None:
         self.init_position = init_position
-        off_the_edge = EPS if self.init_position < 0 else -EPS
+        offset = EPS if self.init_position < 0 else -EPS
         for unit in self.units:
-            unit.position = self.init_position + off_the_edge
+            unit.position = self.init_position + offset
 
     # GETTERS
     def get_army_reach(self) -> float:
@@ -569,9 +562,9 @@ class Fight:
 
     def _do_push_from_winner(self, winner: Unit, loser: Unit, balance: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, capped by winners speed
-        step = DELTA_T if loser.position < loser.army.init_position else -DELTA_T
+        step = 1 if loser.position < loser.army.init_position else -1
         factor = min(1, (balance-1) / (1+loser.rigidity))
-        dist = step * min(winner.eff_speed, loser.eff_speed * factor)
+        dist = min(winner.eff_speed, loser.eff_speed * factor) * BASE_SPEED * DELTA_T * step
         loser.move_by(dist)
 
         # Used mostly to prevent mutual flanking from pursuing when ahead

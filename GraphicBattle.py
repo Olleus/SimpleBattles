@@ -19,6 +19,13 @@ ATTACK_LINE_OFFSET: float = 0.2
 ARROWHEAD_SIZE: float = 0.2
 
 
+"""TODO: Add icons on top left of unit to show stance of deployed units
+triangle = FAST
+square = LINE
+Circle = HOLD / HALT
+"""
+
+
 @define
 class BattleScene:
     """Contains a list of frames showing the battle, along with methods for drawing them"""
