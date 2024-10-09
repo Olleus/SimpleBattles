@@ -194,7 +194,7 @@ class BattleScene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=widths[1])  # Right
         
         # Draw Text
-        string = f"{unit.name} {100*unit.morale:.0f}%: {unit.eff_power():.0f}"
+        string = f"{unit.name} {100*unit.morale:.0f}%: {unit.get_eff_power():.0f}"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
         return image
@@ -206,7 +206,7 @@ class BattleScene:
 
     def line_width(self, unit: Unit, side: int) -> int:
         # Change line thickness on edge of unit rectangle depanding on state of flanks
-        state = unit.army.file_state(unit.file + side, unit.position)
+        state = unit.army.get_state_of_file(unit.file + side, unit.position)
         if state == FILE_EMPTY:
             return 2
         elif state == FILE_VULNERABLE:

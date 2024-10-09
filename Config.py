@@ -2,7 +2,6 @@
 Larger delta_t is faster to compute and render as a gif, smaller values are smaller
 As long as value is sufficiently small, should have negligible impact on actual result of battle
 """
-
 DELTA_T = 0.005
 
 

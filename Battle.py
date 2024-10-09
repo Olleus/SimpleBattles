@@ -1,6 +1,7 @@
+from enum import Enum
 from functools import cache
 from itertools import chain
-from math import inf, log
+from math import log
 
 from attrs import define, Factory, field, validators
 from typing import Iterable, Self
@@ -21,6 +22,8 @@ SIDE_RANGE_PENALTY: float = 0.5
 BASE_SPEED: float = 20
 PURSUE_MORALE: float = -0.1
 HARASS_SLOW_DOWN: float = 1.5
+FAST_DISTANCE: float = 4
+HALT_POWER_GRADIENT: float = 5
 
 LOW_MORALE_POWER: float = 200
 TERRAIN_POWER: float = 100  # * O(0.1) * O(0.1) for roughness and rigidity respectively
@@ -28,18 +31,25 @@ NEIGHBOR_POWER: float = 10
 HEIGHT_DIF_POWER: float = 10  # *O(1) from height difference
 
 # Army Global
-LOCKED_SPEED_DIST: float = 4
 FILE_EMPTY: int = 0
 FILE_VULNERABLE: int = -2
 FILE_SUPPORTED: int = 1
 RESERVES_POWER: float = 0.13
 RESERVES_SOFT_CAP: float = 500
 RESERVE_DIST_BEHIND: float = 2
-MIN_RESERVE_DIST: float = 0.5
+MIN_SAFE_DEPLOY_DIST: float = 0.5
 
 # Fight Global
 POWER_SCALE: float = 50  # This much power difference results in a 2:1 casualty ratio
 DELTA_T: float = Config.DELTA_T
+
+
+class Stance(Enum):
+    """The lower number, the more aggressive. Any loss of morale makes a unit revert to FAST"""
+    FAST = 0  # Moves at own speed always
+    LINE = 1  # Moves at the slowest speed of the army
+    HOLD = 2  # Same as line, but switches to HALT if moving would lower its get_eff_power 
+    HALT = 3  # Same as Hold, but signals that unit aborted its last move
 
 
 @define(frozen=False)
@@ -139,6 +149,7 @@ class Unit:
 
     army: "Army"
     unit_type: UnitType
+    stance: Stance
     file: int
     position: float = field(init=False, default=0)
 
@@ -147,7 +158,7 @@ class Unit:
     pursuing: bool = field(init=False, default=False)
 
     def __repr__(self) -> str:
-        return f"{self.name:<10} | {self.eff_power():<5.1f}P  {100*self.morale:<5.1f}M | " \
+        return f"{self.name:<10} | {self.get_eff_power():<5.1f}P  {100*self.morale:<5.1f}M | " \
                f"({self.file:>2}, {self.position: .3f}, {self.height: .3f})"
 
     # Pull up attributes to Unit
@@ -171,6 +182,7 @@ class Unit:
     def att_range(self) -> float:
         return self.unit_type.att_range
 
+    # New attributes
     @property
     def terrain(self) -> Terrain:
         if not self.army.landscape:
@@ -183,18 +195,16 @@ class Unit:
             return 0
         return self.army.landscape.height(self.file, self.position)
 
-    # New attributes
-    @property
-    def eff_speed(self) -> float:
-        if self in self.army.deployed_units:
-            eff_speed = self.speed*(1-self.terrain.roughness) / (HARASS_SLOW_DOWN**self.harassment)
-            return min(self.army.locked_speed, eff_speed)
-        else:
-            return self.speed
-
     @property
     def eff_terain_rigidity(self) -> float:
         return self.rigidity + (self.speed/BASE_SPEED - 1)
+
+    @property
+    def eff_speed(self) -> float:
+        if self in self.army.deployed_units:
+            return self.speed*(1-self.terrain.roughness) / (HARASS_SLOW_DOWN**self.harassment)
+        else:
+            return self.speed
 
     # Getters
     def is_in_front(self, unit: Self) -> bool:
@@ -211,53 +221,83 @@ class Unit:
     def distance_to(self, position: float) -> float:
         return abs(self.position - position)
 
-    def eff_power(self) -> float:
+    def get_eff_power(self) -> float:
         if not self.army.other_army or not self.army.landscape:
-            # If things are not fully set up, eff power is just power
-            return self.power
+            return self.power  # If things are not fully set up, eff power is just power
 
         morale = -LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
-        if self in self.army.deployed_units:
-            neighbour = NEIGHBOR_POWER * self.state_neighboring_files() * (1+self.rigidity)
-            reserves = self.army.reserve_power
-            terrain = -TERRAIN_POWER * self.terrain.roughness * self.eff_terain_rigidity
-            terrain = max(0, terrain) if self.terrain.penalty else terrain
-            height = self.height * HEIGHT_DIF_POWER
-            return self.power + morale + neighbour + reserves + terrain + height
-        else:
-            return self.power + morale
 
-    def state_neighboring_files(self) -> int:
+        if self not in self.army.deployed_units:
+            return self.power + morale  # For reserve or defeated units
+
+        neighbour = NEIGHBOR_POWER * self.get_state_of_adjacent_files() * (1+self.rigidity)
+        reserves = self.army.reserve_power
+        terrain = -TERRAIN_POWER * self.terrain.roughness * self.eff_terain_rigidity
+        terrain = min(0, terrain) if self.terrain.penalty else terrain
+        height = self.height * HEIGHT_DIF_POWER
+        return self.power + morale + neighbour + reserves + terrain + height
+
+    def get_state_of_adjacent_files(self) -> int:
         """alone: -1, end of line: 0 (if open: -3), centre: 1, one flank open: -2, both open: -5"""
         if self in self.army.deployed_units:
             state = -1
-            state += self.army.file_state(self.file - 1, self.position)
-            state += self.army.file_state(self.file + 1, self.position)
+            state += self.army.get_state_of_file(self.file - 1, self.position)
+            state += self.army.get_state_of_file(self.file + 1, self.position)
             return state
         else:
             return 0
 
     # Setters
+    def change_stance_from_enemy_distance(self, dist: float) -> None:
+        if self.stance is Stance.LINE:
+            if dist < self.eff_speed * FAST_DISTANCE:
+                self.stance = Stance.FAST
+
     def move_towards(self, target: float) -> None:
-        if self.position < target:
-            self.position = min(self.position + self.eff_speed*DELTA_T, target)
-
-        elif self.position > target:
-            self.position = max(self.position - self.eff_speed*DELTA_T, target)
-
-        self.cap_position()
+        self._move_in_stance_towards_pos(target, 0)
 
     def move_towards_range_of(self, unit: Self) -> None:
-        target = unit.position
-        eff_range = self.eff_range_for(unit.file) - EPS
+        self._move_in_stance_towards_pos(unit.position, self.eff_range_for(unit.file) - EPS)
 
-        if self.position < target - eff_range:
-            self.position = min(self.position + self.eff_speed*DELTA_T, target - eff_range)
+    def _move_in_stance_towards_pos(self, target: float, offset: float) -> None:
+        """Modify movement according to stance"""
+        if self.stance is Stance.FAST:
+            self._move_towards_pos(self.eff_speed, target, offset)
+        elif self.stance is Stance.LINE:
+            self._move_towards_pos(self.army.get_slowest_eff_speed(), target, offset)
+        elif self.stance is Stance.HOLD or self.stance is Stance.HALT:
+            # HALT still checks whether moving, marked as HALT mostly to recognise stalemates
+            self._move_towards_pos_for_power(self.army.get_slowest_eff_speed(), target, offset)
+        else:
+            raise ValueError(f"Unknown stance {self.stance}")
 
-        elif self.position > target + eff_range:
-            self.position = max(self.position - self.eff_speed*DELTA_T, target + eff_range)
+    def _move_towards_pos_for_power(self, speed: float, target: float, offset: float) -> None:
+        """ If, once past the initial zone, moving causes a rapid loss of power, HALT """
+        old_pos = self.position
+        old_power = self.get_eff_power()
 
-        self.cap_position()
+        self._move_towards_pos(self.army.get_slowest_eff_speed(), target, offset)
+
+        if self.is_major_power_drop(old_pos, old_power):
+            self.position = old_pos
+            self.stance = Stance.HALT
+        else:
+            self.stance = Stance.HOLD
+
+    def is_major_power_drop(self, old_pos: float, old_power: float) -> bool:
+        if abs(self.position - self.army.init_position) > MIN_SAFE_DEPLOY_DIST:
+            grad = (old_power - self.get_eff_power()) / abs(self.position - old_pos)
+            return grad > HALT_POWER_GRADIENT
+        return False
+
+    def _move_towards_pos(self, speed: float, target: float, offset: float) -> None:
+        if self.position < target - offset:
+            self.position = min(self.position + speed*DELTA_T, target - offset)
+            self.cap_position()
+
+        elif self.position > target + offset:
+            self.position = max(self.position - speed*DELTA_T, target + offset)
+            self.cap_position()        
 
     def move_by(self, dist: float) -> None:
         self.position += dist
@@ -273,6 +313,9 @@ class Unit:
 
     def change_morale(self, change: float) -> None:
         self.morale = max(0, self.morale + change)
+        if change < 0:
+            self.stance = Stance.FAST
+            self.army.set_neighbours_to_FAST(self.file)
 
     def change_harassment(self, change: float) -> None:
         self.harassment = max(0, self.harassment + change)
@@ -297,7 +340,13 @@ class Unit:
 @define(eq=False)
 class Army:
 
+    # Validators
+    def valid_army_stance(self, attribute, value):
+        if value is Stance.HALT:
+            raise ValueError("Army should not being in the HALT stance")
+
     name: str
+    stance: Stance = field(validator=valid_army_stance)
     color: str = field(default="Black")  # Must match HTML color names
 
     file_units: dict[int, Unit] = field(init=False, default=Factory(dict))
@@ -305,7 +354,6 @@ class Army:
     removed: list[Unit] = field(init=False, default=Factory(list))
 
     init_position: float = field(init=False, default=0)
-    locked_speed: float = field(init=False, default=inf)
     landscape: Landscape = field(init=False, default=None)
     other_army: Self = field(init=False, default=None)
 
@@ -345,23 +393,19 @@ class Army:
 
     # Creation
     def add(self, file: int, unit_type: UnitType) -> Self:
-        self.file_units[file] = Unit(self, unit_type, file)
+        self.file_units[file] = Unit(self, unit_type, self.stance, file)
         return self
 
     def add_reserves(self, *unit_type_args: UnitType) -> Self:
         for unit_type in unit_type_args:
-            self.reserves.append(Unit(self, unit_type, 0))
+            self.reserves.append(Unit(self, unit_type, Stance.FAST, 0))
         return self
-
-    def get_starting_distance(self) -> float:
-        return max(max(1+x.att_range, 3*x.speed/BASE_SPEED) for x in self.deployed_units)
 
     def set_up(self, init_pos: float, landscape: Landscape, other_army: Self) -> None:
         assert len(self.file_units), "Cannot setup an army without any deployed units"
         self.file_units = dict(sorted(self.file_units.items()))
         self.set_init_position(init_pos)
         self.landscape = landscape
-        self.locked_speed = min(unit.eff_speed for unit in self.deployed_units)
         self.other_army = other_army
 
     def set_init_position(self, init_position: float) -> None:
@@ -376,8 +420,7 @@ class Army:
 
     def change_morale(self, change: float) -> None:
         for unit in chain(self.deployed_units, self.reserves):
-            if not unit.pursuing:
-                unit.change_morale(change)
+            unit.change_morale(change)
 
     def remove_unit(self, unit: Unit) -> None:
         file = None
@@ -395,17 +438,17 @@ class Army:
         if self.reserves:
             new_unit = self.reserves.pop(0)
             new_unit.file = file
-            depl_pos = self.position_to_deplot_reserve_at(ref_pos)
+            depl_pos = self.position_to_deploy_reserve_at(ref_pos)
             new_unit.position = depl_pos
             self.other_army.move_unit_safely_away_from_pos(file, depl_pos)
             self.file_units[file] = new_unit 
 
-    def position_to_deplot_reserve_at(self, ref_pos: float) -> float:
+    def position_to_deploy_reserve_at(self, ref_pos: float) -> float:
         # Give some breathing room to reserve units when deployed
         if self.init_position < 0:
-            return max(ref_pos - RESERVE_DIST_BEHIND, self.init_position + MIN_RESERVE_DIST)
+            return max(ref_pos - RESERVE_DIST_BEHIND, self.init_position + MIN_SAFE_DEPLOY_DIST)
         else:
-            return min(ref_pos + RESERVE_DIST_BEHIND, self.init_position - MIN_RESERVE_DIST)
+            return min(ref_pos + RESERVE_DIST_BEHIND, self.init_position - MIN_SAFE_DEPLOY_DIST)
 
     def move_unit_safely_away_from_pos(self, file: int, ref_pos: float) -> None:
         # Prevents overlapping units, jumps towards home as necessary
@@ -425,7 +468,19 @@ class Army:
         self.file_units[new_file].file = new_file
         del self.file_units[file]
 
+    def set_neighbours_to_FAST(self, file: int) -> None:
+        for new_file in [file-1, file+1]:
+            if new_file in self.file_units:
+                self.file_units[new_file].stance = Stance.FAST
+
     # Query
+    def get_army_reach(self) -> float:
+        return max(max(1+x.att_range, 1+2*x.speed/BASE_SPEED) for x in self.deployed_units)
+
+    def get_slowest_eff_speed(self) -> float:
+        return min(unit.eff_speed for unit in self.deployed_units
+                   if unit.stance is not Stance.FAST)
+
     def unit_blocking_file(self, file: int, ref_pos: float) -> Unit | None:
         """Which unit would an enemy at (file, ref_pos) first encounter, if any"""
         ordered_units: list[tuple[float, int, Unit]] = []  # Middle element is to break ties
@@ -447,7 +502,7 @@ class Army:
         else:
             return None
 
-    def file_state(self, file: int, ref_pos: float) -> int:
+    def get_state_of_file(self, file: int, ref_pos: float) -> int:
         """Who has units in that file and, if both, who is closer to the reference position"""
         self_pre = self.is_file_active(file)
         enem_pre = self.other_army.is_file_active(file)
@@ -494,7 +549,8 @@ class Fight:
         self.do_push()
 
     def set_balance(self) -> None:
-        self.balance = 2.0 ** ((self.unit_A.eff_power()-self.unit_B.eff_power()) / (2*POWER_SCALE))
+        power_dif = self.unit_A.get_eff_power()-self.unit_B.get_eff_power()
+        self.balance = 2.0 ** (power_dif / (2*POWER_SCALE))
 
     def do_casualties_on_A(self) -> None:
         self.unit_A.change_morale(- DELTA_T * (1 - self.unit_A.terrain.cover) / self.balance)
@@ -532,6 +588,7 @@ class OneWayFight(Fight):
 
 @define(eq=False)
 class FightAssigner:
+    """Decides which units will attack which over units at a particular moment"""
 
     army_1: Army
     army_2: Army
@@ -622,6 +679,7 @@ class FightAssigner:
 
 @define(eq=False)
 class Battle:
+    """Top level class that HALTs references to everything"""
 
     army_1: Army
     army_2: Army
@@ -632,7 +690,7 @@ class Battle:
 
     def __attrs_post_init__(self) -> None:
         """Pass refernces down the chain as required"""
-        init_pos = max(self.army_1.get_starting_distance(), self.army_2.get_starting_distance())
+        init_pos = max(self.army_1.get_army_reach(), self.army_2.get_army_reach())
         self.army_1.set_up(-init_pos, self.landscape, self.army_2)
         self.army_2.set_up(init_pos, self.landscape, self.army_1)
 
@@ -640,11 +698,25 @@ class Battle:
         if verbosity >= 10:
             self.print_turn()
 
-        while not self.army_1.defeated and not self.army_2.defeated:
+        while not self.is_battle_ended():
             self.turns += 1
             self.do_turn(verbosity)
 
-        if verbosity >= 0:
+        self.do_closing_verborsity(verbosity)
+
+    def is_battle_ended(self) -> bool:
+        if self.army_1.defeated:
+            return True
+        if self.army_2.defeated:
+            return True
+        if all(unit.stance is Stance.HALT for unit in self.iter_all_deployed()):
+            return True
+        if self.turns > 1000:
+            return True
+        return False
+
+    def do_closing_verborsity(self, verbosity: int) -> None:
+        if verbosity > 0:
             if verbosity < 100:  # Don't reprint when verbosity is high
                 self.print_turn()
             self.print_winner()
@@ -663,17 +735,20 @@ class Battle:
             fight.do()
 
     def do_turn_move(self) -> None:
-        for unit in self.order_move():
+        for unit in self.get_move_order():
             enemy = unit.army.other_army.unit_blocking_file(unit.file, unit.position)
             if not enemy:
+                unit.stance = Stance.FAST  # Unit will never be attacked, so try to pursue ASAP
                 unit.move_towards(unit.army.other_army.init_position)
             elif not unit.is_in_range_of(enemy):
+                unit.change_stance_from_enemy_distance(abs(unit.position-enemy.position))
                 unit.move_towards_range_of(enemy)
 
-    def order_move(self) -> list[Unit]:
+    def get_move_order(self) -> list[Unit]:
         """Move melee units in centre first (last two are to break tie)"""
         return sorted(self.iter_all_deployed(), key=lambda x:
-                      (x.att_range, abs(x.file), -abs(x.position), x.file, x.position))
+                      (x.stance.value, x.att_range, abs(x.file), -abs(x.position),
+                       x.file, x.position))
 
     def do_turn_reduce_files(self) -> None:
         """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
@@ -684,23 +759,10 @@ class Battle:
                         unit.army.slide_file_towards_centre(unit.file)
 
     def update_status(self) -> None:
-        """ Repeat incase a unit moved/push into camp, leading to morale loss and other death"""
+        """ Repeat in case a unit moved/push into camp, leading to morale loss and other death"""
         self.army_1.update_status()
         self.army_2.update_status()
         self.army_1.update_status()
-        self.remove_locked_speed()
-
-    def remove_locked_speed(self) -> None:
-        """Armies move at the speed of their slowest unit until fighting starts and/or close"""
-        if self.army_1.locked_speed == self.army_2.locked_speed == inf:
-            return
-
-        min_sep = min(unit.position for unit in self.army_2.deployed_units)   # > 0
-        min_sep -= max(unit.position for unit in self.army_1.deployed_units)  # < 0
-
-        if self.curr_fights or min_sep <= LOCKED_SPEED_DIST:
-            self.army_1.locked_speed = inf
-            self.army_2.locked_speed = inf
 
     def determine_winner(self) -> int:
         """0 => both won, 1 => army_1 won, 2 => army_2 won, -1 => both lost """
@@ -747,9 +809,9 @@ class Battle:
         if winner == 0:
             print("BOTH ARMIES WERE PARTIALLY VICTORIOUS")
         elif winner == 1:
-            print(f"{self.army_1.name} WAS VICTORIOUS")
+            print(f"{self.army_1.name.upper()} WAS VICTORIOUS")
         elif winner == 2:
-            print(f"{self.army_2.name} WAS VICTORIOUS")
+            print(f"{self.army_2.name.upper()} WAS VICTORIOUS")
         elif winner == -1:
             print("NEITHER ARMIES HELD THE FIELD")
 

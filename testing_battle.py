@@ -1,14 +1,14 @@
 from math import inf  # noqa
 
-from Battle import Army, Landscape
+from Battle import Stance, Army, Landscape
 from GraphicBattle import GraphicBattle
-
+import Data
 from Data import flat, even, rough, broken, ragged, forest, river, \
                  spear, sword, pike, javelin, archer, horse, h_archer, irreg  # noqa
 
 
 def preamble():
-    return Army("1", "DarkBlue"), Army("2", "DarkRed")
+    return Army("1", Stance.LINE, "DarkBlue"), Army("2", Stance.LINE, "DarkRed")
 
 
 def do_single_terrain_battle(army_1, army_2, terrain, name="testing_out"):
@@ -204,9 +204,11 @@ def test_21():
     # 4+1 beat 5+0 and 3+2 (no matter where it's deployed)
     # Does not hold for small armies: 2+1 loses to 3+0
     army_1, army_2 = preamble()
-    army_1.add(-2, spear).add(-1, spear).add(0, spear).add_reserves(spear, spear)
+    army_1.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
     army_2.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add_reserves(spear)
-    do_single_terrain_battle(army_1, army_2, even)
+    landscape = Data.landscape_river()
+
+    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(verbosity=10)
 
 
 """ Testing how many weak units are needed to defeat a strong one """
