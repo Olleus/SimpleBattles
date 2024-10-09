@@ -1,7 +1,8 @@
-from math import inf, sqrt
+"""Wrapper around Battle to display battles graphically as a series of PIL.Image frames"""
+
 from io import BytesIO
 from itertools import chain
-
+from math import inf, sqrt
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,8 +10,8 @@ from attrs import define, Factory, field
 from PIL import Image, ImageColor, ImageDraw
 
 import Config
-from Battle import FILE_WIDTH, FILE_EMPTY, FILE_VULNERABLE, FILE_SUPPORTED, DEFAULT_TERRAIN, \
-                   Landscape, Unit, Army, Fight, OneWayFight, Battle
+from Battle import DEFAULT_TERRAIN, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, FILE_WIDTH, \
+                   Army, Battle, Fight, Landscape, OneWayFight, TwoWayFight, Unit
 
 
 UNIT_FILE_WIDTH: float = 0.95
@@ -20,6 +21,8 @@ ARROWHEAD_SIZE: float = 0.2
 
 @define
 class BattleScene:
+    """Contains a list of frames showing the battle, along with methods for drawing them"""
+
     max_screen: tuple[int, int]
     landscape: Landscape
     min_file: int
@@ -57,12 +60,33 @@ class BattleScene:
 
         self.draw_background()
 
-    def coord_position(self, file: float, pos: float) -> tuple[float, float]:
+    # GETTERS
+    def get_coords(self, file: float, pos: float) -> tuple[float, float]:
         """Pixel position of a point in the middle of the given file at the given position"""
         """Returns ints in float type for ease of vector manipulations later"""
         file_steps = 0.5 + file - self.min_file
         pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
+
+    def get_fight_color(self, fight: Fight):
+        if isinstance(fight, OneWayFight):
+            return ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
+        else:
+            cA = ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
+            cB = ImageColor.getcolor(fight.unit_B.army.color, mode="RGBA")
+            return tuple((cA[j]+cB[j]) // 2 for j in range(4))
+
+    def get_line_width(self, unit: Unit, side: int) -> int:
+        # Change line thickness on edge of unit rectangle depanding on state of flanks
+        state = unit.army.get_state_of_file(unit.file + side, unit.position)
+        if state == FILE_EMPTY:
+            return 2
+        elif state == FILE_VULNERABLE:
+            return 1
+        elif state == FILE_SUPPORTED:
+            return 3
+        else:
+            raise RuntimeError("Unexpected value for unit.army.file_state()")
 
     # BACKGROUND
     def draw_background(self) -> None:
@@ -83,8 +107,8 @@ class BattleScene:
             file_map[inf] = DEFAULT_TERRAIN
 
         for pos, terrain in file_map.items():
-            top = self.coord_position(file-0.5, max(pos_prior, self.min_pos))
-            bot = self.coord_position(file+0.5, min(pos, self.max_pos))
+            top = self.get_coords(file-0.5, max(pos_prior, self.min_pos))
+            bot = self.get_coords(file+0.5, min(pos, self.max_pos))
             draw.rectangle((*top, *bot), fill=terrain.color)
             pos_prior = pos
 
@@ -110,14 +134,14 @@ class BattleScene:
         x = np.arange(self.min_file-0.5, self.max_file+0.5, 0.05)
         y = np.arange(self.min_pos, self.max_pos, 0.05)
         X, Y = np.meshgrid(x, y)
-        h = np.vectorize(self.landscape.height)(X, Y)
+        h = np.vectorize(self.landscape.get_height)(X, Y)
         return X, Y, h
 
     def draw_contour_graph_on_background(self, buffer: BytesIO) -> None:
         plot_img = Image.open(buffer)
 
-        left, top = self.coord_position(self.min_file-0.5, self.min_pos)
-        right, bot = self.coord_position(self.max_file+0.5, self.max_pos)
+        left, top = self.get_coords(self.min_file-0.5, self.min_pos)
+        right, bot = self.get_coords(self.max_file+0.5, self.max_pos)
         plot_img = plot_img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         plot_img = plot_img.resize((int(right-left), int(bot-top)))
         self.background.paste(plot_img, (int(left), int(top)), plot_img)
@@ -126,7 +150,7 @@ class BattleScene:
         draw = ImageDraw.Draw(self.background)
         for (file, pos), height in self.landscape.height_map.items():
             if self.min_pos <= pos <= self.max_pos:
-                x, y = self.coord_position(file, pos)
+                x, y = self.get_coords(file, pos)
                 draw.text((x, y), f"{height}", fill="Black", font_size=self.font_size, anchor="mm")
 
     # FRAME
@@ -155,9 +179,8 @@ class BattleScene:
 
     def draw_all_deployed_units(self, army_1: Army, army_2: Army) -> None:
         for unit in chain(army_1.deployed_units, army_2.deployed_units):
-            image = self.draw_unit_image(unit, unit.army.color,
-                                         (self.line_width(unit, -1), self.line_width(unit, +1)))
-
+            widths = self.get_line_width(unit, -1), self.get_line_width(unit, +1)
+            image = self.draw_unit_image(unit, unit.army.color, widths)
             self.paste_unit_image(image, unit.file, unit.position)
 
     def draw_army_removed_units(self, army: Army) -> None:
@@ -200,32 +223,20 @@ class BattleScene:
         return image
 
     def paste_unit_image(self, image: Image.Image, file: float, position: float) -> None:
-        centre_x, centre_y = self.coord_position(file, position)
+        centre_x, centre_y = self.get_coords(file, position)
         coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
         self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
 
-    def line_width(self, unit: Unit, side: int) -> int:
-        # Change line thickness on edge of unit rectangle depanding on state of flanks
-        state = unit.army.get_state_of_file(unit.file + side, unit.position)
-        if state == FILE_EMPTY:
-            return 2
-        elif state == FILE_VULNERABLE:
-            return 1
-        elif state == FILE_SUPPORTED:
-            return 3
-        else:
-            raise RuntimeError("Unexpected value for unit.army.file_state()")
-
     def draw_fight(self, fight: Fight) -> None:
-        pos_A = list(self.coord_position(fight.unit_A.file, fight.unit_A.position))
-        pos_B = list(self.coord_position(fight.unit_B.file, fight.unit_B.position))
+        pos_A = list(self.get_coords(fight.unit_A.file, fight.unit_A.position))
+        pos_B = list(self.get_coords(fight.unit_B.file, fight.unit_B.position))
         self.adjust_line_end_points(pos_A, pos_B)
 
-        color = self.fight_color(fight)
+        color = self.get_fight_color(fight)
         ImageDraw.Draw(self.canvas).line([*pos_A, *pos_B], fill=color, width=3)
 
         self.draw_arrowhead(pos_B, pos_A, color)
-        if not isinstance(fight, OneWayFight):
+        if isinstance(fight, TwoWayFight):
             self.draw_arrowhead(pos_A, pos_B, color)
 
     def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float]) -> None:
@@ -250,14 +261,6 @@ class BattleScene:
         elif pos_A[0] < pos_B[0]:
             pos_B[0] -= y_offset
 
-    def fight_color(self, fight: Fight):
-        if isinstance(fight, OneWayFight):
-            return ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
-        else:
-            cA = ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
-            cB = ImageColor.getcolor(fight.unit_B.army.color, mode="RGBA")
-            return tuple((cA[j]+cB[j]) // 2 for j in range(4))
-
     def draw_arrowhead(self, pos: list[float], origin: list[float], color: tuple[int, int, int, int]
                        ) -> None:
         vec = pos[0] - origin[0], pos[1] - origin[1]
@@ -275,6 +278,7 @@ class BattleScene:
 @define
 class GraphicBattle(Battle):
     """Same as parent, but draws a frame every turn and then saves them as a gif"""
+
     max_screen: tuple[int, int]
     gif_name: str
     battle_scene: BattleScene = field(init=False)

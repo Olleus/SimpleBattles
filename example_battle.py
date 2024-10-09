@@ -1,7 +1,6 @@
 from Battle import Stance, Army
 from GraphicBattle import GraphicBattle
-import Data
-from Data import flat, even, rough, broken, ragged, forest, river, \
+from Data import flat, even, rough, broken, ragged, forest, river, PresetLandscapes, \
                  spear, sword, pike, javelin, archer, horse, h_archer, irreg  # noqa
 
 
@@ -13,6 +12,6 @@ army_2 = Army("Macedonia", Stance.LINE, "DarkRed")
 army_2.add(-2, javelin).add(-1, pike).add(0, pike).add(1, pike).add(2, pike)
 army_2.add_reserves(horse)
 
-landscape = Data.landscape_ridge()
+landscape = PresetLandscapes.ridge()
 
 GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_out").do(10)
