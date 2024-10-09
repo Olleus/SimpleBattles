@@ -27,10 +27,10 @@ HARASS_SLOW_DOWN: float = 1.5
 FAST_DISTANCE: float = 4
 HALT_POWER_GRADIENT: float = 5
 
-LOW_MORALE_POWER: float = 200
-TERRAIN_POWER: float = 100  # * O(0.1) * O(0.1) for roughness and rigidity respectively
-NEIGHBOR_POWER: float = 10
-HEIGHT_DIF_POWER: float = 10  # *O(1) from height difference
+LOW_MORALE_POWER: float = 200  # * [0, 1] from morale
+TERRAIN_POWER: float = 200  # * O(0.1) * O(0.1) for roughness and rigidity respectively
+NEIGHBOR_POWER: float = 10  # * O(2) from state of adjacent files
+HEIGHT_DIF_POWER: float = 10  # * O(0.1) from height difference
 
 # Army Global
 FILE_EMPTY: int = 0
@@ -138,11 +138,11 @@ class UnitType:
     """The different types of units that can exist"""
 
     name: str
-    power: float  # ~100
+    power: float  # O(100)
 
-    rigidity: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
+    rigidity: float = field(default=0, validator=validators.gt(-1))  # O(1)
     speed: float = field(default=BASE_SPEED, validator=validators.gt(0))  # O(20)
-    att_range: float = field(default=1.0, validator=validators.ge(1.0))  # O(1)
+    att_range: float = field(default=1.0, validator=validators.ge(1))  # O(1)
 
     def __repr__(self) -> str:
         return f"{self.name: <10}  |  P={self.power:.0f} ({self.att_range:.0f}),  "\
@@ -300,8 +300,8 @@ class Unit:
             self.cap_position()        
 
     def is_major_power_drop(self, old_pos: float, old_power: float) -> bool:
-        if abs(self.position - self.army.init_position) > MIN_SAFE_DEPLOY_DIST:
-            grad = (old_power - self.get_eff_power()) / abs(self.position - old_pos)
+        if self.get_dist_to(self.army.init_position) > MIN_SAFE_DEPLOY_DIST:
+            grad = (old_power - self.get_eff_power()) / self.get_dist_to(old_pos)
             return grad > HALT_POWER_GRADIENT
         return False
 
@@ -436,15 +436,15 @@ class Army:
 
         if self.is_file_active(file - 1):
             unit = self.file_units[file - 1]
-            ordered_units += [(abs(unit.position-ref_pos) + SIDE_RANGE_PENALTY, 1, unit)]
+            ordered_units += [(unit.get_dist_to(ref_pos) + SIDE_RANGE_PENALTY, 1, unit)]
         
         if self.is_file_active(file + 1):
             unit = self.file_units[file + 1]
-            ordered_units += [(abs(unit.position-ref_pos) + SIDE_RANGE_PENALTY, 2, unit)]
+            ordered_units += [(unit.get_dist_to(ref_pos) + SIDE_RANGE_PENALTY, 2, unit)]
 
         if self.is_file_active(file):
             unit = self.file_units[file]
-            ordered_units += [(abs(unit.position-ref_pos), 0, unit)]
+            ordered_units += [(unit.get_dist_to(ref_pos), 0, unit)]
 
         if ordered_units:
             return min(ordered_units)[-1]
@@ -466,8 +466,8 @@ class Army:
             return FILE_EMPTY
 
         else:  # Both have a unit there
-            self_dist = abs(self.file_units[file].position - ref_pos)
-            enem_dist = abs(self.other_army.file_units[file].position - ref_pos)
+            self_dist = self.file_units[file].get_dist_to(ref_pos)
+            enem_dist = self.other_army.file_units[file].get_dist_to(ref_pos)
 
             if self_dist > 1.0 and enem_dist < self_dist:
                 return FILE_VULNERABLE
@@ -752,7 +752,7 @@ class Battle:
                 unit.stance = Stance.FAST  # Unit will never be attacked, so try to pursue ASAP
                 unit.move_towards(unit.army.other_army.init_position)
             elif not unit.is_in_range_of(enemy):
-                unit.change_stance_from_enemy_distance(abs(unit.position-enemy.position))
+                unit.change_stance_from_enemy_distance(unit.get_dist_to(enemy.position))
                 unit.move_towards_range_of(enemy)
 
     def get_move_order(self) -> list[Unit]:
@@ -770,7 +770,7 @@ class Battle:
                         unit.army.slide_file_towards_centre(unit.file)
 
     def update_status(self) -> None:
-        """ Repeat in case a unit moved/push into camp, leading to morale loss and other death"""
+        """ Repeat in case a unit started pursuing, leading to morale loss and other's death"""
         self.army_1.update_status()
         self.army_2.update_status()
         self.army_1.update_status()
