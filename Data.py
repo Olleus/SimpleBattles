@@ -86,18 +86,19 @@ class PresetLandscapes:
 
     @staticmethod
     def river() -> Landscape:
-        terrain = {file: {-2: even, -0.5: broken, 0.5: river, 2: broken, inf: even}
+        terrain = {file: {-4: even, -2: rough, -0.75: broken, 0.75: river,
+                          2: broken, 4: rough, inf: even}
                    for file in range(-2, 3)}
 
-        height: dict[tuple[float, float], float] = {(0, 0): -2,
-                                                    (-1.2, 0): -3,
-                                                    (1.2, 0): -2,
-                                                    (-2.3, 0): -3,
-                                                    (2.3, 0): -2,
-                                                    (-1.4, -5): 0,
-                                                    (-1.5, 5): 0,
-                                                    (1.6, -5): 0,
-                                                    (1.5, 5): 0}
+        height: dict[tuple[float, float], float] = {(2.2, 0): -3,
+                                                    (0.9, 0): -3,
+                                                    (0, 0): -3,
+                                                    (-0.9, 0): -3,
+                                                    (-2.2, 0): -3,
+                                                    (-1.2, 7.8): 3,
+                                                    (1.6, 6.2): 0,
+                                                    (-1.6, -7.8): 0,
+                                                    (1.2, -6.2): 3}
         
         return Landscape(terrain, height)
 

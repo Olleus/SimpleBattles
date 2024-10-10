@@ -11,19 +11,13 @@ from PIL import Image, ImageColor, ImageDraw
 
 import Config
 from Battle import DEFAULT_TERRAIN, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, FILE_WIDTH, \
-                   Army, Battle, Fight, Landscape, OneWayFight, TwoWayFight, Unit
+                   Army, Battle, Fight, Landscape, Stance, OneWayFight, TwoWayFight, Unit
 
 
 UNIT_FILE_WIDTH: float = 0.95
 ATTACK_LINE_OFFSET: float = 0.2
 ARROWHEAD_SIZE: float = 0.2
-
-
-"""TODO: Add icons on top left of unit to show stance of deployed units
-triangle = FAST
-square = LINE
-Circle = HOLD / HALT
-"""
+STANCE_ICON_FRAC: float = 1 / 6
 
 
 @define
@@ -49,7 +43,7 @@ class BattleScene:
 
     def __attrs_post_init__(self) -> None:
         num_files = 1 + self.max_file - self.min_file  # Count files, not gaps
-        num_pos = 4 + self.max_pos - self.min_pos      # Including reserves and dead
+        num_pos = 4 + self.max_pos - self.min_pos      # Including space for reserves and dead
         
         file_pixel_width = self.max_screen[0] / num_files
         pos_pixel_height = self.max_screen[1] / num_pos
@@ -63,7 +57,7 @@ class BattleScene:
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
-        self.font_size = int(self.pixel_per_pos / 2)  # Allows text to fit nicely in unit rect
+        self.font_size = int(self.pixel_per_pos / 2.1)  # Allows text to fit nicely in unit rect
 
         self.draw_background()
 
@@ -81,7 +75,7 @@ class BattleScene:
         else:
             cA = ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
             cB = ImageColor.getcolor(fight.unit_B.army.color, mode="RGBA")
-            return tuple((cA[j]+cB[j]) // 2 for j in range(4))
+            return tuple((cA[i]+cB[i]) // 2 for i in range(4))  # type: ignore[index]
 
     def get_line_width(self, unit: Unit, side: int) -> int:
         # Change line thickness on edge of unit rectangle depanding on state of flanks
@@ -102,7 +96,8 @@ class BattleScene:
         for file in range(self.min_file, self.max_file + 1):
             self.draw_background_file(file)
 
-        self.draw_background_contours()
+        buffer = self.plot_contour_graph()
+        self.draw_contour_graph_on_background(buffer)
         self.draw_background_height_labels()
 
     def draw_background_file(self, file: int) -> None:
@@ -119,10 +114,6 @@ class BattleScene:
             draw.rectangle((*top, *bot), fill=terrain.color)
             pos_prior = pos
 
-    def draw_background_contours(self) -> None:
-        buffer = self.plot_contour_graph()
-        self.draw_contour_graph_on_background(buffer)
-
     def plot_contour_graph(self) -> BytesIO:
         X, Y, h = self.make_vectors_for_contour_graph()
         levels = np.arange(np.min(h), np.max(h), 1)
@@ -131,7 +122,6 @@ class BattleScene:
         ax.set_axis_off()
         fig.tight_layout()
         ax.contour(X, Y, h, colors="DimGray", linestyles="dotted", levels=levels)
-        # fig.show()
 
         buffer = BytesIO()
         fig.savefig(buffer, format='png')
@@ -149,9 +139,9 @@ class BattleScene:
 
         left, top = self.get_coords(self.min_file-0.5, self.min_pos)
         right, bot = self.get_coords(self.max_file+0.5, self.max_pos)
-        plot_img = plot_img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
-        plot_img = plot_img.resize((int(right-left), int(bot-top)))
-        self.background.paste(plot_img, (int(left), int(top)), plot_img)
+        plot_img2 = plot_img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        plot_img3 = plot_img2.resize((int(right-left), int(bot-top)))
+        self.background.paste(plot_img3, (int(left), int(top)), plot_img3)
 
     def draw_background_height_labels(self) -> None:
         draw = ImageDraw.Draw(self.background)
@@ -216,18 +206,32 @@ class BattleScene:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)), color=bkgd)
         draw = ImageDraw.Draw(image)
-        
+
         # Draw Rectangle
-        draw.line([(1, 1), (x-1, 1)], fill=color, width=2)  # Top
-        draw.line([(1, y), (x-1, y)], fill=color, width=2)  # Bottom
-        draw.line([(1, 1), (1, y)], fill=color, width=widths[0])  # Left
-        draw.line([(x-1, 1), (x-1, y)], fill=color, width=widths[1])  # Right
+        draw.line([(1, 1), (x-1, 1)], fill=color, width=2)                 # Top
+        draw.line([(1, y), (x-1, y)], fill=color, width=2)                 # Bottom
+        draw.line([(1, 1), (1, y)], fill=color, width=int(widths[0]))      # Left
+        draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(widths[1]))  # Right
         
         # Draw Text
         string = f"{unit.name} {100*unit.morale:.0f}%: {unit.get_eff_power():.0f}"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
+        # Draw Stance
+        if unit.deployed:
+            self.draw_stance_poligon(draw, unit, color)
+
         return image
+
+    def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
+        r = self.pixel_per_pos * STANCE_ICON_FRAC
+
+        if unit.stance is Stance.FAST:
+            draw.regular_polygon((3+r, 1+r, r), 3, rotation=60, fill=color, width=0)
+        elif unit.stance is Stance.LINE:
+            draw.regular_polygon((3+r, 3+r, r), 4, fill=color, width=0)
+        elif unit.stance is Stance.HOLD or unit.stance is Stance.HALT:
+            draw.regular_polygon((3+r, 3+r, r), 4, rotation=45, fill=color, width=0)
 
     def paste_unit_image(self, image: Image.Image, file: float, position: float) -> None:
         centre_x, centre_y = self.get_coords(file, position)
@@ -308,25 +312,24 @@ class GraphicBattle(Battle):
 
     def do(self, verbosity: int) -> None:
         super().do(verbosity)
-        frames = self.battle_scene.frames
+        frames = self.make_padded_frames()
 
-        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=len(frames)//10)
-        time = max(40, 12000/len(frames))
-
-        frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:], duration=time,
+        frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:], duration=30,
                        loop=True)
-
         print(f"Animation saved to {self.gif_name}")
 
     def do_to_buffer(self) -> BytesIO:
         # Version of above useful for integrating into pyscript and displaying in browser
         super().do(0)
+        frames = self.make_padded_frames()
 
-        frames = self.battle_scene.frames
-        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=len(frames)//10)
-        time = max(40, 12000/len(frames))
+        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=50)
 
         stream = BytesIO()
         frames[0].save(stream, format="GIF", save_all=True, append_images=frames[1:],
-                       duration=time, loop=True)
+                       duration=30, loop=True)
         return stream
+
+    def make_padded_frames(self) -> list[Image.Image]:
+        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=50)
+        return [self.battle_scene.frames[0]]*30 + self.battle_scene.frames
