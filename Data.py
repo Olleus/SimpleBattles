@@ -123,5 +123,6 @@ class PresetLandscapes:
 # Collections for easy referencing, especially to build interfact in pyscript
 
 unit_dict = {x.name: x for x in globals().values() if isinstance(x, UnitType)}
+terrain_dict = {x.name: x for x in globals().values() if isinstance(x, Terrain)}
 landscape_dict = {k: v for k, v in PresetLandscapes.__dict__.items()
                   if isinstance(v, staticmethod) and v.__annotations__["return"] is Landscape}
