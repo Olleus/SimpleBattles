@@ -733,7 +733,7 @@ class Battle:
 
     def __attrs_post_init__(self) -> None:
         """Pass refernces down the chain as required"""
-        init_pos = max(self.army_1.get_army_reach(), self.army_2.get_army_reach())
+        init_pos = max(self.army_1.get_army_reach(), self.army_2.get_army_reach(), 5)
         self.army_1.set_up(-init_pos, self.landscape, self.army_2)
         self.army_2.set_up(init_pos, self.landscape, self.army_1)
 

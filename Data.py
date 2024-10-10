@@ -111,11 +111,11 @@ class PresetLandscapes:
                    1: {0: rough, 3: even, inf: smooth},
                    2: {1: even, inf: smooth}}
 
-        height: dict[tuple[float, float], float] = {(-0.5, -4): 4,
-                                                    (0.5, -4): 3,
+        height: dict[tuple[float, float], float] = {(-0.4, -4): 5,
+                                                    (1, -4): 3,
                                                     (0, 4): 0,
-                                                    (-1.45, 2): -1,
-                                                    (1.45, 2): -1}
+                                                    (-1.1, 1.5): -1,
+                                                    (1.3, 2): -1}
 
         return Landscape(terrain, height)
 
