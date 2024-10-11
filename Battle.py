@@ -1,7 +1,6 @@
 """Contains all logic for creating and resolving battles"""
 
 from enum import Enum
-from functools import cache
 from itertools import chain
 from math import log
 from typing import Iterable, Self
@@ -182,6 +181,10 @@ class Unit:
     def att_range(self) -> float:
         return self.unit_type.att_range
 
+    @property
+    def init_position(self) -> float:
+        return self.army.init_position
+
     # NEW ATTRIBUTES
     @property
     def terrain(self) -> Terrain:
@@ -282,7 +285,7 @@ class Unit:
     def _confirm_halting_move(self, power_grad: float, old_pos: float, old_flank_dist: float,
                               new_flank_dist: float):
 
-        if self.get_dist_to(self.army.init_position) < MIN_DEPLOY_DIST:
+        if self.get_dist_to(self.init_position) < MIN_DEPLOY_DIST:
             self.stance = Stance.HOLD
             return
 
@@ -318,8 +321,8 @@ class Unit:
         self.cap_position()
 
     def cap_position(self) -> None:
-        min_pos, max_pos = self.army.min_max_positions()
-        self.position = round(capped(min_pos, self.position, max_pos), POS_DEC_DIG)
+        bound = self.init_position
+        self.position = round(capped(-bound, self.position, -bound), POS_DEC_DIG)
 
     def change_morale(self, change: float) -> None:
         self.morale = max(0, self.morale + change)
@@ -328,10 +331,10 @@ class Unit:
             self.army.set_neighbors_to_FAST(self.file)
 
     def update_status(self) -> None:
-        if self.morale <= 0 or self.position == self.army.init_position:
+        if self.morale <= 0 or self.position == self.init_position:
             self.army.remove_unit(self)
             self.pursuing = False
-        elif self.position == self.army.other_army.init_position:
+        elif self.position == -self.init_position:
             if not self.pursuing:
                 self.army.other_army.change_morale(PURSUE_MORALE)
                 self.pursuing = True
@@ -357,9 +360,8 @@ class Army:
     reserves: list[Unit] = field(init=False, default=Factory(list))
     removed: list[Unit] = field(init=False, default=Factory(list))
 
+    battle: "Battle" = field(init=False, default=None)
     init_position: float = field(init=False, default=0)
-    landscape: Landscape = field(init=False, default=None)
-    other_army: Self = field(init=False, default=None)
 
     def __str__(self) -> str:
         string = f"{self.name} (init_pos={self.init_position:.1f})"
@@ -371,7 +373,16 @@ class Army:
                 string += f"\n        {unit}"
         return string
 
-    # ATTRIBUTES
+    # PULLED UP ATTRIBUTES
+    @property
+    def landscape(self) -> Landscape:
+        return self.battle.landscape
+
+    @property
+    def other_army(self) -> "Army":
+        return self.battle.get_other_army(self)
+
+    # NEW ATTRIBUTES
     @property
     def units(self) -> Iterable[Unit]:
         return chain(self.file_units.values(), self.reserves, self.removed)
@@ -392,10 +403,6 @@ class Army:
         total = sum(unit.power for unit in self.reserves)
         return RESERVES_POWER * RESERVES_SOFT_CAP * log(1 + total/RESERVES_SOFT_CAP)
 
-    @cache
-    def min_max_positions(self) -> list[float]:
-        return sorted((self.init_position, self.other_army.init_position))
-
     # CREATION
     def add(self, file: int, unit_type: UnitType) -> Self:
         self.file_units[file] = Unit(self, unit_type, self.stance, file)
@@ -406,12 +413,10 @@ class Army:
             self.reserves.append(Unit(self, unit_type, Stance.FAST, 0))
         return self
 
-    def set_up(self, init_pos: float, landscape: Landscape, other_army: Self) -> None:
+    def set_up(self, battle: "Battle", init_pos: float) -> None:
         assert len(self.file_units), "Cannot setup an army without any deployed units"
         self.file_units = dict(sorted(self.file_units.items()))
         self.set_init_position(init_pos)
-        self.landscape = landscape
-        self.other_army = other_army
 
     def set_init_position(self, init_position: float) -> None:
         self.init_position = init_position
@@ -585,9 +590,9 @@ class Fight:
 
     def _do_push_from_winner(self, winner: Unit, loser: Unit, balance: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, capped by winners speed
-        step = 1 if loser.position < loser.army.init_position else -1
+        dirct = 1 if loser.position < loser.init_position else -1
         factor = min(1, (balance-1) / (1+loser.rigidity))
-        dist = min(winner.eff_speed, loser.eff_speed * factor) * BASE_SPEED * DELTA_T * step
+        dist = min(winner.eff_speed, loser.eff_speed * factor) * BASE_SPEED * DELTA_T * dirct
         loser.move_by(dist)
 
         # Used mostly to prevent mutual flanking from pursuing when ahead
@@ -727,8 +732,16 @@ class Battle:
     def __attrs_post_init__(self) -> None:
         """Pass refernces down the chain as required"""
         init_pos = max(self.army_1.get_army_reach(), self.army_2.get_army_reach(), 5)
-        self.army_1.set_up(-init_pos, self.landscape, self.army_2)
-        self.army_2.set_up(init_pos, self.landscape, self.army_1)
+        self.army_1.set_up(self, -init_pos)
+        self.army_2.set_up(self, init_pos)
+
+    def get_other_army(self, army: Army) -> Army:
+        if army is self.army_1:
+            return self.army_2
+        elif army is self.army_2:
+            return self.army_1
+        else:
+            raise ValueError(f"{army} is not in Battle")
 
     def do(self, verbosity: int) -> None:
         if verbosity >= 10:
@@ -769,7 +782,7 @@ class Battle:
             enemy = unit.army.other_army.get_unit_blocking_file(unit.file, unit.position)
             if not enemy:
                 unit.stance = Stance.FAST  # Unit will never be attacked, so try to pursue ASAP
-                unit.move_towards(unit.army.other_army.init_position)
+                unit.move_towards(-unit.init_position)
             elif not unit.is_in_range_of(enemy):
                 unit.change_stance_from_enemy_distance(unit.get_dist_to(enemy.position))
                 unit.move_towards_range_of(enemy)
