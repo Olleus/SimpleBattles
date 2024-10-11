@@ -26,20 +26,19 @@ SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
-HARASS_SLOW_DOWN: float = 1.5    # Maximum factor by which a unit's speed is reduced when under fire
 HALT_POWER_GRADIENT: float = 20  # Units in HOLD stop moving when power drops at this rate
 PURSUE_MORALE: float = -0.2      # Morale loss inflicted when a unit starts pursing off the map
 
 # Power
 POWER_SCALE: float = 50          # This much power difference results in a 2:1 casualty ratio
 LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
-TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity
+TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity+speed
 HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
 FILE_EMPTY: float = 0            # Power for having an empty adjacent file
 FILE_SUPPORTED: float = 10       # Power for having an adjacent file protected by a friendly unit
 FILE_VULNERABLE: float = -20     # Power for having an adjacent file with a dangerously close enemy
-RESERVES_POWER: float = 0.1      # Rate at which reserves give their own power to deployed unit
-RESERVES_SOFT_CAP: float = 500   # Scale which determines how sharply the above diminishes
+RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power to deployed unit
+RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
 
 
 class Stance(Enum):
@@ -156,7 +155,6 @@ class Unit:
     position: float = field(init=False, default=0)
 
     morale: float = field(init=False, default=1)
-    harassment: float = field(init=False, default=0)
     pursuing: bool = field(init=False, default=False)
 
     def __repr__(self) -> str:
@@ -208,7 +206,7 @@ class Unit:
     @property
     def eff_speed(self) -> float:
         if self.deployed:
-            return self.speed*(1-self.terrain.roughness) / (HARASS_SLOW_DOWN**self.harassment)
+            return self.speed*(1-self.terrain.roughness)
         return self.speed
 
     # GETTERS
@@ -329,21 +327,14 @@ class Unit:
             self.stance = Stance.FAST
             self.army.set_neighbors_to_FAST(self.file)
 
-    def change_harassment(self, change: float) -> None:
-        self.harassment = max(0, self.harassment + change)
-
     def update_status(self) -> None:
-        self.harassment = 0
-
         if self.morale <= 0 or self.position == self.army.init_position:
             self.army.remove_unit(self)
             self.pursuing = False
-
         elif self.position == self.army.other_army.init_position:
             if not self.pursuing:
                 self.army.other_army.change_morale(PURSUE_MORALE)
                 self.pursuing = True
-
         else:
             # For a unit that was pursuing, but then was redeployed somewhere else
             self.pursuing = False
@@ -624,7 +615,6 @@ class OneWayFight(Fight):
         self.change_stances()
         self.set_balance()
         self.do_casualties_on_B()
-        self.unit_B.change_harassment(self.balance)
 
 
 @define(eq=False)
@@ -681,15 +671,18 @@ class FightAssigner:
         def sort_key(unit, target):
             """Lots of trial and error needed to get this behaving sensibly - tread lightly
                 (Recall that True > False)"""
-            attacker = target in assigned_to.get(unit, set())
             frontal = unit.is_in_front(target)
-            return (frontal and unit.get_dist_to(target.position) <= 1 + EPS,
-                    attacker,
-                    # TODO: Test if this is really what we want to add?
-                    # unit.get_dist_to(target.position) <= 1 - SIDE_RANGE_PENALTY + EPS,
+            dist = unit.get_dist_to(target.position) - EPS
+            melee = (dist <= 1) if frontal else (dist <= 1 - SIDE_RANGE_PENALTY)
+            attacker = target in assigned_to.get(unit, set())
+            unassigned = target not in self.assignments
+
+            return (frontal and melee,
+                    melee,
                     frontal,
-                    target not in self.assignments,
-                    -unit.get_dist_to(target.position),
+                    attacker,
+                    unassigned,
+                    -dist,
                     -unit.att_range,
                     abs(unit.file),
                     abs(target.file),

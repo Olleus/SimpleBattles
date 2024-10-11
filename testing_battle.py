@@ -80,7 +80,7 @@ def test_B1():
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(0, javelin).add(1, javelin)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 def test_B2():
@@ -88,15 +88,15 @@ def test_B2():
     army_1, army_2 = preamble()
     army_1.add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
     army_2.add(-1, javelin).add(0, javelin).add(1, javelin).add(2, javelin)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 def test_B3():
-    # sword win on even, javelins win on rough
+    # sword win on rough, javelins win on broken
     army_1, army_2 = preamble()
     army_1.add(0, sword).add(1, sword)
     army_2.add(0, javelin).add(1, javelin)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 def test_B4():
@@ -104,11 +104,11 @@ def test_B4():
     army_1, army_2 = preamble()
     army_1.add(0, pike).add(1, pike)
     army_2.add(0, javelin).add(1, javelin)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_B5():
-    # archers win on rough, javelins win on broken
+    # javelins win on rough, archers win on broken
     army_1, army_2 = preamble()
     army_1.add(0, javelin).add(1, javelin)
     army_2.add(0, archer).add(1, archer)
@@ -120,7 +120,7 @@ def test_B6():
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(0, archer).add(1, archer)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 def test_B7():
@@ -128,23 +128,23 @@ def test_B7():
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(0, irreg).add(1, irreg)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 def test_B8():
-    # swords win on even, irregs win on rough
+    # swords win on rough, irregs win on broken
     army_1, army_2 = preamble()
     army_1.add(0, sword).add(1, sword)
     army_2.add(0, irreg).add(1, irreg)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 def test_B9():
-    # irregs win on even, javelins win on rough
+    # irregs win on rough, javelins win on broken
     army_1, army_2 = preamble()
     army_1.add(0, javelin).add(1, javelin)
     army_2.add(0, irreg).add(1, irreg)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 """ Adding in cavalry units to the mix """
@@ -167,7 +167,7 @@ def test_C2():
 
 
 def test_C3():
-    # l_horse win when 1v1, spears win when 2v2
+    # Draw when 1v1, spears win when 2v2
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(0, l_horse).add(1, l_horse)
@@ -175,11 +175,11 @@ def test_C3():
 
 
 def test_C4():
-    # heavy wins on rough, light on ragged
+    # heavy wins on even, light on rough
     army_1, army_2 = preamble()
     army_1.add(0, h_horse).add(1, h_horse)
     army_2.add(1, l_horse).add(2, l_horse)  # NOTE OFFSET
-    do_single_terrain_battle(army_1, army_2, ragged)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 """ Checking reserves work as intended """
@@ -208,18 +208,21 @@ def test_D2():
 
 
 def test_D3():
-    # 3+2 loses to 5+0 even when deployed at the edge
+    # 3+2 loses to 5+0 even when deployed in the centre for all melee units
+    # When at the edge, reservists win with swords but not with spears
+    x = sword
     army_1, army_2 = preamble()
-    army_1.add(-2, sword).add(-1, sword).add(0, sword).add(1, sword).add(2, sword)
-    army_2.add(-1, sword).add(0, sword).add(1, sword).add_reserves(sword, sword)
+    army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
+    army_2.add(-1, x).add(0, x).add(1, x).add_reserves(x, x)
     do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_D4():
-    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed)
+    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for all melee units
+    x = sword
     army_1, army_2 = preamble()
-    army_1.add(-2, sword).add(-1, sword).add(0, sword).add_reserves(sword, sword)
-    army_2.add(-2, sword).add(-1, sword).add(0, sword).add(1, sword).add_reserves(sword)
+    army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
+    army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
     do_single_terrain_battle(army_1, army_2, even)
 
 
@@ -288,7 +291,7 @@ def test_F1():
 
 
 def test_F2():
-    # Army_1 just wins with height map, loses badly without it
+    # Army_1 wins with height map, just loses without it
     # Also check that contours are drawn properly
     army_1, army_2 = preamble()
 
@@ -340,7 +343,7 @@ def test_G1():
 
 def test_G2():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
@@ -364,7 +367,7 @@ def test_G3():
 
 def test_G4():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -377,6 +380,3 @@ def test_G4():
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
-
-
-test_G3()
