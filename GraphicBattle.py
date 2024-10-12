@@ -1,7 +1,6 @@
 """Wrapper around Battle to display battles graphically as a series of PIL.Image frames"""
 
 from io import BytesIO
-from itertools import chain
 from math import inf, sqrt
 
 import matplotlib.pyplot as plt
@@ -11,7 +10,7 @@ from PIL import Image, ImageColor, ImageDraw
 
 import Config
 from Battle import DEFAULT_TERRAIN, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, FILE_WIDTH, \
-                   Army, Battle, Fight, Landscape, Stance, OneWayFight, TwoWayFight, Unit
+                   Army, Battle, Landscape, Stance, Unit
 
 
 UNIT_FILE_WIDTH: float = 0.95
@@ -21,7 +20,7 @@ STANCE_ICON_FRAC: float = 1 / 6
 
 
 @define
-class BattleScene:
+class Scene:
     """Contains a list of frames showing the battle, along with methods for drawing them"""
 
     max_screen: tuple[int, int]
@@ -69,25 +68,21 @@ class BattleScene:
         pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
 
-    def get_fight_color(self, fight: Fight):
-        if isinstance(fight, OneWayFight):
-            return ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
-        else:
-            cA = ImageColor.getcolor(fight.unit_A.army.color, mode="RGBA")
-            cB = ImageColor.getcolor(fight.unit_B.army.color, mode="RGBA")
-            return tuple((cA[i]+cB[i]) // 2 for i in range(4))  # type: ignore[index]
-
-    def get_line_width(self, unit: Unit, side: int) -> int:
+    def get_line_width(self, file_state: float) -> int:
         # Change line thickness on edge of unit rectangle depanding on state of flanks
-        state = unit.army.get_state_of_file(unit.file + side, unit.position)
-        if state == FILE_EMPTY:
+        if file_state == FILE_EMPTY:
             return 2
-        elif state == FILE_VULNERABLE:
+        elif file_state == FILE_VULNERABLE:
             return 1
-        elif state == FILE_SUPPORTED:
+        elif file_state == FILE_SUPPORTED:
             return 3
         else:
             raise RuntimeError("Unexpected value for unit.army.file_state()")
+
+    def get_blended_color(self, color_1: str, color_2: str) -> tuple[int, ...]:
+        c1 = ImageColor.getrgb(color_1)
+        c2 = ImageColor.getrgb(color_2)
+        return tuple((c1[i]+c2[i]) // 2 for i in range(3))
 
     # BACKGROUND
     def draw_background(self) -> None:
@@ -151,76 +146,33 @@ class BattleScene:
                 draw.text((x, y), f"{height}", fill="Black", font_size=self.font_size, anchor="mm")
 
     # FRAME
-    def draw_frame(self, army_1: Army, army_2: Army, fights: list[Fight], reps: int = 1) -> None:
+    def init_draw_frame(self) -> None:
         self.canvas = Image.new(mode="RGBA", size=self.croped_res, color="White")
         self.canvas.paste(self.background, (0, 0))
 
-        self.draw_battle_in_frame(army_1, army_2, fights)
-
+    def fini_draw_frame(self) -> None:
         if Config.FRAME_COUNTER:
             ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
 
-        for _ in range(reps):
-            self.frames.append(self.canvas)
-
-    def draw_battle_in_frame(self, army_1: Army, army_2: Army, fights: list[Fight]) -> None:
-        self.draw_all_deployed_units(army_1, army_2)
-        self.draw_army_removed_units(army_1)
-        self.draw_army_removed_units(army_2)
-        self.draw_army_reserve_units(army_1)
-        self.draw_army_reserve_units(army_2)
-
-        for fight in fights:
-            self.draw_fight(fight)
-
-    def draw_all_deployed_units(self, army_1: Army, army_2: Army) -> None:
-        for unit in chain(army_1.deployed_units, army_2.deployed_units):
-            widths = self.get_line_width(unit, -1), self.get_line_width(unit, +1)
-            image = self.draw_unit_image(unit, unit.army.color, widths)
-            self.paste_unit_image(image, unit.file, unit.position)
-
-    def draw_army_removed_units(self, army: Army) -> None:
-        # Prevents multiple removed units being drawn on top of each other
-        present: set[int] = set()
-        for unit in reversed(army.removed):
-            if unit.file not in present:
-                present.add(unit.file)
-
-                image = self.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY))
-                position = unit.army.init_position - 0.01  # offset needed because of rouning errors
-                position += 2 if position > 0 else -2
-                self.paste_unit_image(image, unit.file, position)
-
-    def draw_army_reserve_units(self, army: Army) -> None:
-        for slot, unit in enumerate(reversed(army.reserves)):
-            image = self.draw_unit_image(unit, unit.army.color, (FILE_EMPTY, FILE_EMPTY),
-                                         bkgd="White")
-            position = unit.army.init_position
-            position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
-            file = (self.min_file + self.max_file) / 2
-            self.paste_unit_image(image, file, position)
-
-    def draw_unit_image(self, unit: Unit, color: str, widths: tuple[float, float],
+    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], power: float,
                         bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)), color=bkgd)
         draw = ImageDraw.Draw(image)
 
         # Draw Rectangle
-        draw.line([(1, 1), (x-1, 1)], fill=color, width=2)                 # Top
-        draw.line([(1, y), (x-1, y)], fill=color, width=2)                 # Bottom
-        draw.line([(1, 1), (1, y)], fill=color, width=int(widths[0]))      # Left
-        draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(widths[1]))  # Right
+        draw.line([(1, 1), (x-1, 1)], fill=color, width=2)
+        draw.line([(1, y), (x-1, y)], fill=color, width=2)
+        draw.line([(1, 1), (1, y)], fill=color, width=int(self.get_line_width(flanks[0])))
+        draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
         # Draw Text
-        string = f"{unit.name} {100*unit.morale:.0f}%: {unit.get_eff_power():.0f}"
+        string = f"{unit.name} {100*unit.morale:.0f}%: {power:.0f}"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
         # Draw Stance
-        if unit.deployed:
-            self.draw_stance_poligon(draw, unit, color)
-
+        self.draw_stance_poligon(draw, unit, color)
         return image
 
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
@@ -228,26 +180,29 @@ class BattleScene:
 
         if unit.stance is Stance.FAST:
             draw.regular_polygon((3+r, 1+r, r), 3, rotation=60, fill=color, width=0)
+
         elif unit.stance is Stance.LINE:
             draw.regular_polygon((3+r, 3+r, r), 4, fill=color, width=0)
+
         elif unit.stance is Stance.HOLD or unit.stance is Stance.HALT:
             draw.regular_polygon((3+r, 3+r, r), 4, rotation=45, fill=color, width=0)
 
-    def paste_unit_image(self, image: Image.Image, file: float, position: float) -> None:
+    def paste_unit_image(self, image: Image.Image, file: float | None, position: float) -> None:
+        file = (self.min_file + self.max_file) / 2 if file is None else file
         centre_x, centre_y = self.get_coords(file, position)
         coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
         self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
 
-    def draw_fight(self, fight: Fight) -> None:
-        pos_A = list(self.get_coords(fight.unit_A.file, fight.unit_A.position))
-        pos_B = list(self.get_coords(fight.unit_B.file, fight.unit_B.position))
+    def draw_fight(self, unit_A: Unit, unit_B: Unit, color: str | tuple[int, ...], both: bool
+                   ) -> None:
+        pos_A = list(self.get_coords(unit_A.file, unit_A.position))
+        pos_B = list(self.get_coords(unit_B.file, unit_B.position))
         self.adjust_line_end_points(pos_A, pos_B)
 
-        color = self.get_fight_color(fight)
         ImageDraw.Draw(self.canvas).line([*pos_A, *pos_B], fill=color, width=3)
 
         self.draw_arrowhead(pos_B, pos_A, color)
-        if isinstance(fight, TwoWayFight):
+        if both:
             self.draw_arrowhead(pos_A, pos_B, color)
 
     def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float]) -> None:
@@ -272,7 +227,7 @@ class BattleScene:
         elif pos_A[0] < pos_B[0]:
             pos_B[0] -= y_offset
 
-    def draw_arrowhead(self, pos: list[float], origin: list[float], color: tuple[int, int, int, int]
+    def draw_arrowhead(self, pos: list[float], origin: list[float], color: str | tuple[int, ...]
                        ) -> None:
         vec = pos[0] - origin[0], pos[1] - origin[1]
         norm_len = self.pixel_per_pos * ARROWHEAD_SIZE / sqrt(vec[0]**2 + vec[1]**2)
@@ -292,27 +247,76 @@ class GraphicBattle(Battle):
 
     max_screen: tuple[int, int]
     gif_name: str
-    battle_scene: BattleScene = field(init=False)
+    scene: Scene = field(init=False)
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
-        self.set_up_battle_scene()
+        self.set_up_scene()
 
-    def set_up_battle_scene(self) -> None:
+    def set_up_scene(self) -> None:
         min_file = min(min(self.army_1.file_units), min(self.army_2.file_units))
         max_file = max(max(self.army_1.file_units), max(self.army_2.file_units))
-        min_pos = self.army_1.init_position - 0.5  # Space for physical size of starting units
-        max_pos = self.army_2.init_position + 0.5
-        self.battle_scene = \
-            BattleScene(self.max_screen, self.landscape, min_file, max_file, min_pos, max_pos)
+        # Allowing space for physical size of starting units
+        min_pos = min(x.init_pos for x in self.army_1.file_units.values()) - 0.5
+        max_pos = max(x.init_pos for x in self.army_1.file_units.values()) + 0.5
+        self.scene = Scene(self.max_screen, self.landscape, min_file, max_file, min_pos, max_pos)
 
     def do_turn(self, verbosity: int) -> None:
         super().do_turn(verbosity)
-        self.battle_scene.draw_frame(self.army_1, self.army_2, self.curr_fights)
+        self.draw_frame()
+
+    def draw_frame(self) -> None:
+        self.scene.init_draw_frame()
+
+        self.draw_deployed_units(self.army_1)
+        self.draw_deployed_units(self.army_2)
+        self.draw_removed_units(self.army_1)
+        self.draw_removed_units(self.army_2)
+        self.draw_reserve_units(self.army_1)
+        self.draw_reserve_units(self.army_2)
+
+        for unit_A, unit_B in self.fight_pairs.two_way_pairs:
+            color = self.scene.get_blended_color(self.army_1.color, self.army_2.color)
+            self.scene.draw_fight(unit_A, unit_B, color, True)
+
+        for unit_A, unit_B in self.fight_pairs.one_way_pairs:
+            color_name = self.get_army_deployed_in(unit_A).color
+            self.scene.draw_fight(unit_A, unit_B, color_name, False)
+
+        self.scene.fini_draw_frame()
+
+    def draw_deployed_units(self, army: Army) -> None:
+        for unit in army.deployed_units:
+            power = self.get_unit_eff_power(unit)
+            flanks = (self.check_adjacent_file_state(unit, -1),
+                      self.check_adjacent_file_state(unit, +1))
+            image = self.scene.draw_unit_image(unit, army.color, flanks, power)
+            self.scene.paste_unit_image(image, unit.file, unit.position)
+
+    def draw_removed_units(self, army: Army) -> None:
+        # Prevents multiple removed units being drawn on top of each other
+        present: set[int] = set()
+        for unit in reversed(army.removed):
+            if unit.file not in present:
+                present.add(unit.file)
+
+                power = unit.reduced_power
+                image = self.scene.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY), power)
+                position = unit.init_pos - 0.01  # offset needed because of rouning errors
+                position += 2 if position > 0 else -2
+                self.scene.paste_unit_image(image, unit.file, position)
+
+    def draw_reserve_units(self, army: Army) -> None:
+        for slot, unit in enumerate(reversed(army.reserves)):
+            image = self.scene.draw_unit_image(unit, army.color, (FILE_EMPTY, FILE_EMPTY),
+                                               unit.reduced_power, bkgd="White")
+            position = unit.init_pos
+            position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
+            self.scene.paste_unit_image(image, None, position)
 
     def do(self, verbosity: int) -> None:
         super().do(verbosity)
-        frames = self.make_padded_frames()
+        frames = self.make_padding_frames()
 
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:],
                        duration=Config.FRAME_MS, loop=True)
@@ -321,15 +325,14 @@ class GraphicBattle(Battle):
     def do_to_buffer(self) -> BytesIO:
         # Version of above useful for integrating into pyscript and displaying in browser
         super().do(0)
-        frames = self.make_padded_frames()
-
-        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=50)
+        frames = self.make_padding_frames()
 
         stream = BytesIO()
         frames[0].save(stream, format="GIF", save_all=True, append_images=frames[1:],
                        duration=Config.FRAME_MS, loop=True)
         return stream
 
-    def make_padded_frames(self) -> list[Image.Image]:
-        self.battle_scene.draw_frame(self.army_1, self.army_2, [], reps=50)
-        return [self.battle_scene.frames[0]]*30 + self.battle_scene.frames
+    def make_padding_frames(self) -> list[Image.Image]:
+        self.fight_pairs.reset()
+        self.draw_frame()
+        return [self.scene.frames[0]]*30 + self.scene.frames + [self.scene.frames[-1]]*60
