@@ -216,6 +216,15 @@ class Unit:
         power = -TERRAIN_POWER * terrain.roughness * self.eff_terrain_rigidity
         return min(0, power) if terrain.penalty else power
 
+    def get_position_to_attack_target(self, unit: Self) -> float:
+        eff_range = self.get_eff_range_for(unit.file) - EPS
+        if self.position < unit.position - eff_range:    # Need to move forwards
+            return unit.position - eff_range
+        elif self.position > unit.position + eff_range:  # Need to move backwards
+            return unit.position + eff_range
+        else:                                            # No need to move at all
+            return self.position
+
     # BATTLE INJECTION
     def get_eff_power(self, battle: "Battle") -> float:
         power = self.power
@@ -225,6 +234,9 @@ class Unit:
         power += battle.check_adjacent_file_state(self, -1) * (1 + self.rigidity)
         power += battle.get_reserve_power(self)
         return self.power
+
+    def get_cover_weighted_power(self, battle: "Battle") -> float:
+        return self.get_eff_power(battle) + 10 * self.get_cover(battle.landscape)
 
     """ TO BE REFACTORED, DEPENDENCY INJECTED, OR MOVED UP TO ARMY / BATTLE """
     def is_in_front(self, unit: Self) -> bool:
@@ -241,40 +253,24 @@ class Unit:
             if dist < self.get_eff_speed(landscape) * FAST_DISTANCE:
                 self.stance = Stance.FAST
 
-    def move_towards(self, target: float) -> None:
-        self._move_in_stance_towards_pos(target, 0)
-
-    def move_towards_range_of(self, unit: Self) -> None:
-        self._move_in_stance_towards_pos(unit.position, self.get_eff_range_for(unit.file) - EPS)
-
-    def _move_in_stance_towards_pos(self, target: float, offset: float, landscape: Landscape) -> None:
-        """Modify movement according to stance"""
-        if self.stance is Stance.FAST:
-            self._move_towards_pos(self.get_eff_speed(landscape), target, offset)
-        elif self.stance is Stance.LINE:
-            self._move_towards_pos(self.army.get_communal_eff_speed(), target, offset)
-        elif self.stance is Stance.HOLD or self.stance is Stance.HALT:
-            self._move_haltingly_towards_pos(self.army.get_communal_eff_speed(), target, offset)
-        else:
-            raise ValueError(f"Unknown stance {self.stance}")
-
-    def _move_haltingly_towards_pos(self, speed: float, target: float, offset: float) -> None:
+    def move_towards_haltingly(self, target: float, speed: float, army: "Army", battle: "Battle"
+                               ) -> None:
         """ If, once past the initial zone, moving causes a rapid loss of power, HALT """
         old_pos = self.position
-        old_mod_power = self.get_eff_power() + 10*self.terrain.cover  # Discourage going into river
-        backwards_unit = self.army.get_furthest_back_flanker(self.file)
+        old_mod_power = self.get_cover_weighted_power(battle)
+        backwards_unit = army.get_furthest_back_flanker(self)
         old_flank_dist = self.get_dist_to(backwards_unit.position) if backwards_unit else 0
 
-        self._move_towards_pos(speed, target, offset)
+        self.move_towards(target, speed)
 
         new_flank_dist = self.get_dist_to(backwards_unit.position) if backwards_unit else 0
-        new_mod_power = self.get_eff_power() + 10*self.terrain.cover  # Discourage going into river
+        new_mod_power = self.get_cover_weighted_power(battle)
         power_grad = (old_mod_power-new_mod_power) / self.get_dist_to(old_pos)
 
-        self._confirm_halting_move(power_grad, old_pos, old_flank_dist, new_flank_dist)
+        self.confirm_halting_move(power_grad, old_pos, old_flank_dist, new_flank_dist)
 
-    def _confirm_halting_move(self, power_grad: float, old_pos: float, old_flank_dist: float,
-                              new_flank_dist: float):
+    def confirm_halting_move(self, power_grad: float, old_pos: float, old_flank_dist: float,
+                             new_flank_dist: float):
 
         if self.get_dist_to(self.init_pos) < MIN_DEPLOY_DIST:
             self.stance = Stance.HOLD
@@ -294,13 +290,13 @@ class Unit:
         elif self.position != old_pos:
             self.stance = Stance.HOLD
 
-    def _move_towards_pos(self, speed: float, target: float, offset: float) -> None:
-        if self.position < target - offset:
-            self.position = min(self.position + speed*BASE_SPEED*DELTA_T, target - offset)
+    def move_towards(self, target: float, speed: float) -> None:
+        if self.position < target:
+            self.position = min(self.position + speed*BASE_SPEED*DELTA_T, target)
             self.cap_position()
 
-        elif self.position > target + offset:
-            self.position = max(self.position - speed*BASE_SPEED*DELTA_T, target + offset)
+        elif self.position > target:
+            self.position = max(self.position - speed*BASE_SPEED*DELTA_T, target)
             self.cap_position()        
 
     def move_by(self, dist: float) -> None:
@@ -431,7 +427,7 @@ class Army:
         return min((unit.get_eff_speed(landscape) for unit in self.deployed_units
                     if unit.stance is not Stance.FAST), default=1)
 
-    def get_unit_blocking_file(self, file: int, ref_pos: float) -> Unit | None:
+    def get_blocking_unit(self, file: int, ref_pos: float) -> Unit | None:
         """Which unit would an enemy at (file, ref_pos) first encounter, if any"""
         # TODO: Replace list with dict to unit to guarantee to ties in sorting
         ordered_units: list[tuple[float, int, Unit]] = []  # Middle element is to break ties
@@ -772,13 +768,19 @@ class Battle:
 
     def do_turn_move(self) -> None:
         for unit in self.get_move_order():
-            enemy = unit.army.other_army.get_unit_blocking_file(unit.file, unit.position)
-            if not enemy:
+            army = self.get_army_deployed_in(unit)
+            assert army is not None, "Cannot move undeployed unit"
+            enemy_unit = self.get_other_army(army).get_blocking_unit(unit.file, unit.position)
+
+            if not enemy_unit:
                 unit.stance = Stance.FAST  # Unit will never be attacked, so try to pursue ASAP
-                unit.move_towards(-unit.init_pos)
-            elif not unit.is_in_range_of(enemy):
-                unit.change_stance_from_enemy_distance(unit.get_dist_to(enemy.position))
-                unit.move_towards_range_of(enemy)
+                self.move_unit_towards(unit, army, -unit.init_pos)
+
+            elif not unit.is_in_range_of(enemy_unit):
+                dist = unit.get_dist_to(enemy_unit.position)
+                unit.change_stance_from_enemy_distance(dist, self.landscape)
+                target_pos = unit.get_position_to_attack_target(enemy_unit)
+                self.move_unit_towards(unit, army, target_pos)
 
     def get_move_order(self) -> list[Unit]:
         """Move melee units in centre first (last two are to break tie)"""
@@ -786,13 +788,30 @@ class Battle:
                       (x.stance.value, x.att_range, abs(x.file), -abs(x.position),
                        x.file, x.position))
 
+    def move_unit_towards(self, unit: Unit, army: Army, target: float) -> None:
+        speed = self.get_unit_advance_speed(unit, army)
+        if unit.stance is Stance.FAST or unit.stance is Stance.LINE:
+            unit.move_towards(target, speed)
+        elif unit.stance is Stance.HOLD or unit.stance is Stance.HALT:
+            unit.move_towards_haltingly(target, speed, army, self)
+        else:
+            raise ValueError(f"Unknown stance {unit.stance}")
+
+    def get_unit_advance_speed(self, unit: Unit, army: Army) -> float:
+        if unit.stance is Stance.FAST:
+            return unit.get_eff_speed(self.landscape)
+        return army.get_communal_eff_speed(self.landscape)
+
     def do_turn_reduce_files(self) -> None:
         """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
         for unit in list(self.iter_all_deployed()):
             if unit.pursuing and unit.file != 0:
-                if unit.army.other_army.get_unit_blocking_file(unit.file, unit.position) is None:
-                    if not unit.army.is_central_side_file_active(unit.file):
-                        unit.army.slide_file_towards_centre(unit.file)
+                army = self.get_army_deployed_in(unit)
+                assert army is not None, "Cannot move undeployed unit"
+                enemy_army = self.get_other_army(army)
+                if enemy_army.get_blocking_unit(unit.file, unit.position) is None:
+                    if not army.is_central_side_file_active(unit.file):
+                        army.slide_file_towards_centre(unit.file)
 
     def update_status(self) -> None:
         """ Repeat in case a unit started pursuing, leading to morale loss and other's death"""
@@ -828,14 +847,13 @@ class Battle:
             raise ValueError(f"{army} is not in Battle")
 
     def get_army_deployed_in(self, unit: Unit) -> Army | None:
-        if self.army_1.file_units[unit.file] is unit:  # TODO: Refactor this
+        if self.army_1.file_units[unit.file] is unit:
             return self.army_1
         elif self.army_2.file_units[unit.file] is unit:
             return self.army_2
         else:
             return None
 
-    # TODO: rename these getters to 'check'
     def check_adjacent_file_state(self, unit: Unit, adj: int) -> float:
         army = self.get_army_deployed_in(unit)
         if not army:
