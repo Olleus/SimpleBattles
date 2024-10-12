@@ -691,11 +691,12 @@ class Battle:
         self.print_result(verbosity)
 
     def do_turn(self, verbosity: int) -> None:
-        self.tidy()  # Give chance to show dead units / fights before they're removed
+        self.tidy()
         self.fight()
         self.move()
         if verbosity >= 100:
             self.print_turn()
+        # Drawing frame happens here - between a fight() and the next tidy()
 
     def is_battle_ended(self) -> bool:
         if self.army_1.defeated:
