@@ -1,5 +1,4 @@
 """Wrapper around Battle to display battles graphically as a series of PIL.Image frames"""
-
 from io import BytesIO
 from math import inf, sqrt
 
@@ -22,7 +21,6 @@ STANCE_ICON_FRAC: float = 1 / 6
 @define
 class Scene:
     """Contains a list of frames showing the battle, along with methods for drawing them"""
-
     max_screen: tuple[int, int]
     landscape: Landscape
     min_file: int
@@ -155,6 +153,7 @@ class Scene:
             ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
         self.frames.append(self.canvas)
+        del self.canvas
 
     def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], power: float,
                         bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
@@ -244,8 +243,9 @@ class Scene:
 
 @define
 class GraphicBattle(Battle):
-    """Same as parent, but draws a frame every turn and then saves them as a gif"""
-
+    """Same as parent, but draws a frame every turn and then saves them as a gif
+        GOOD PRACTICE TO CALL GARBAGE COLLECTOR - gc.collect(2) -
+        AFTER CLASS IS DONE TO FREE UP MEMORY FASTER"""
     max_screen: tuple[int, int]
     gif_name: str
     scene: Scene = field(init=False)
@@ -320,7 +320,7 @@ class GraphicBattle(Battle):
         frames = self.make_padding_frames()
 
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:],
-                       duration=Config.FRAME_MS, loop=True)
+                       duration=Config.FRAME_MS, loop=True, optimise=True)
         print(f"Animation saved to {self.gif_name}")
 
     def do_to_buffer(self) -> BytesIO:
