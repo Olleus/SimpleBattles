@@ -152,6 +152,11 @@ class Unit:
         return f"{self.name:<10} | {self.power:<5.1f}P  {100*self.morale:<5.1f}M | " \
                f"({self.file:>2}, {self.position: .3f})"
 
+    def str_in_battle(self, battle: "Battle") -> str:
+        return f"{self.name:<10} | " \
+               f"{battle.get_unit_eff_power(self):<5.0f}P  {100*self.morale:<5.1f}M | " \
+               f"({self.file:>2}, {self.position: .3f}, {self.get_height(battle.landscape):.2f})"
+
     ##########################
     """ ATTRIBUTES & UTILS """
     ##########################
@@ -241,7 +246,7 @@ class Unit:
 
     def set_up(self, init_pos: float) -> None:
         self.init_pos = init_pos
-        self.position = init_pos      
+        self.position = init_pos + (EPS if init_pos < 0 else -EPS)
 
     def move_by(self, dist: float) -> None:
         self.position += dist
@@ -252,7 +257,8 @@ class Unit:
         self.cap_position()
 
     def cap_position(self) -> None:
-        self.position = round(capped(-self.init_pos, self.position, self.init_pos), POS_DEC_DIG)
+        self.position = round(capped(-abs(self.init_pos), self.position, abs(self.init_pos)),
+                              POS_DEC_DIG)
 
     def change_stance_from_enemy_distance(self, dist: float, landscape: Landscape) -> None:
         if self.stance is Stance.LINE:
@@ -361,9 +367,23 @@ class Army:
             for unit in self.reserves:
                 string += f"\n        {unit}"
         if self.removed:
-            string += "\n    Removed:"
+            string += "\n    Removed: "
             for unit in self.removed:
-                string += f"    {unit.name}"
+                string += f"{unit.name}    "
+        return string
+
+    def str_in_battle(self, battle: "Battle") -> str:
+        string = f"{self.name}"
+        for file, unit in self.file_units.items():
+            string += f"\n    {file:>2}: {unit.str_in_battle(battle)}"
+        if self.reserves:
+            string += "\n    Reserves:"
+            for unit in self.reserves:
+                string += f"\n        {unit}"
+        if self.removed:
+            string += "\n    Removed: "
+            for unit in self.removed:
+                string += f"{unit.name}    "
         return string
 
     ##################
@@ -475,11 +495,9 @@ class Army:
         return self
 
     def set_up(self, init_pos: float) -> None:
-        # assert len(self.file_units), "Cannot setup an army without any deployed units"
-        self.file_units = dict(sorted(self.file_units.items()))
-        safe_init_pos = init_pos + (EPS if init_pos < 0 else -EPS)
+        self.file_units = dict(sorted(self.file_units.items()))  # Sorting by file convenient
         for unit in self.units:
-            unit.set_up(safe_init_pos)
+            unit.set_up(init_pos)
 
     def change_all_units_morale(self, change: float) -> None:
         for unit in chain(self.deployed_units, self.reserves):
@@ -643,9 +661,9 @@ class Battle:
         yield from self.army_2.deployed_units
 
     def get_army_deployed_in(self, unit: Unit) -> Army:
-        if self.army_1.file_units[unit.file] is unit:
+        if self.army_1.file_units.get(unit.file, None) is unit:
             return self.army_1
-        elif self.army_2.file_units[unit.file] is unit:
+        elif self.army_2.file_units.get(unit.file, None) is unit:
             return self.army_2
         else:
             raise ValueError(f"{unit} is not deployed in Battle")
@@ -658,9 +676,9 @@ class Battle:
         else:
             raise ValueError(f"{army} is not in Battle")
 
-    ####################
-    """ TURN CONTROL """
-    ####################
+    #################
+    """ CORE LOOP """
+    #################
 
     def do(self, verbosity: int) -> None:
         if verbosity >= 10:
@@ -673,9 +691,9 @@ class Battle:
         self.print_result(verbosity)
 
     def do_turn(self, verbosity: int) -> None:
-        self.do_fights()
-        self.do_turn_move()
-        self.do_close_turn()
+        self.tidy()  # Give chance to show dead units / fights before they're removed
+        self.fight()
+        self.move()
         if verbosity >= 100:
             self.print_turn()
 
@@ -701,11 +719,45 @@ class Battle:
         else:
             return 0
 
+    ############
+    """ TIDY """
+    ############
+
+    def tidy(self) -> None:
+        # Order important, need to change morale before changing files before marked as pursuing
+        self.change_morale_from_first_pursue()
+        self.reduce_files()
+        self.update_status()
+
+    def change_morale_from_first_pursue(self) -> None:
+        for unit in self.iter_all_deployed():
+            if unit.position == -unit.init_pos:
+                if not unit.pursuing:
+                    other_army = self.get_other_army(self.get_army_deployed_in(unit))
+                    other_army.change_all_units_morale(PURSUE_MORALE)
+
+    def reduce_files(self) -> None:
+        """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
+        for unit in list(self.iter_all_deployed()):
+            if unit.pursuing and unit.file != 0:
+                army = self.get_army_deployed_in(unit)
+                enemy = self.get_other_army(army).get_blocking_unit(unit)
+                if enemy is None:
+                    if not army.is_file_towards_centre_active(unit.file):
+                        army.slide_file_towards_centre(unit.file)
+
+    def update_status(self) -> None:
+        for unit in list(self.iter_all_deployed()):
+            unit.update_status()
+            if unit.morale <= 0 or unit.position == unit.init_pos:
+                army = self.get_army_deployed_in(unit)
+                army.remove_unit(unit, self.get_other_army(army))
+
     ################
     """ FIGHTING """
     ################
 
-    def do_fights(self) -> None:
+    def fight(self) -> None:
         self.fight_pairs.assign_all()
 
         for unit_A, unit_B in self.fight_pairs.two_way_pairs:
@@ -747,7 +799,7 @@ class Battle:
 
     def inflict_casualties(self, unit: Unit, balance: float) -> None:
         cover = unit.get_cover(self.landscape)
-        change = -DELTA_T * (1 - cover) / balance
+        change = -DELTA_T * (1 - cover) * balance
         self.get_army_deployed_in(unit).change_unit_morale(unit, change)
 
     def push_from_fight(self, unit_A: Unit, unit_B: Unit, balance: float) -> None:
@@ -773,7 +825,7 @@ class Battle:
     """ MOVING """
     ##############
 
-    def do_turn_move(self) -> None:
+    def move(self) -> None:
         for unit in self.get_move_order():
             enemy = self.get_other_army(self.get_army_deployed_in(unit)).get_blocking_unit(unit)
 
@@ -811,40 +863,6 @@ class Battle:
             return unit.get_eff_speed(self.landscape)
         return self.get_army_deployed_in(unit).get_communal_eff_speed(self.landscape)
 
-    ###############
-    """ CLOSING """
-    ###############
-
-    def do_close_turn(self) -> None:
-        self.do_turn_reduce_files()
-        self.do_first_pursue_morale_hit()
-        self.update_status()
-
-    def do_turn_reduce_files(self) -> None:
-        """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
-        for unit in list(self.iter_all_deployed()):
-            if unit.pursuing and unit.file != 0:
-                army = self.get_army_deployed_in(unit)
-                enemy = self.get_other_army(army).get_blocking_unit(unit)
-                if enemy is None:
-                    if not army.is_file_towards_centre_active(unit.file):
-                        army.slide_file_towards_centre(unit.file)
-
-    def do_first_pursue_morale_hit(self) -> None:
-        # Do *BEFORE* updating status this turn, otherwise unit will already be pursuing
-        for unit in self.iter_all_deployed():
-            if unit.position == -unit.init_pos:
-                if not unit.pursuing:
-                    other_army = self.get_other_army(self.get_army_deployed_in(unit))
-                    other_army.change_all_units_morale(-PURSUE_MORALE)
-
-    def update_status(self) -> None:
-        for unit in list(self.iter_all_deployed()):
-            unit.update_status()
-            if unit.morale <= 0 or unit.position == unit.init_pos:
-                army = self.get_army_deployed_in(unit)
-                army.remove_unit(unit, self.get_other_army(army))
-
     ################
     """ PRINTING """
     ################
@@ -858,8 +876,8 @@ class Battle:
     def print_turn(self) -> None:
         print(f"\nTurn {self.turns}")
         self.print_fights()
-        print(self.army_1)
-        print(self.army_2)
+        print(self.army_1.str_in_battle(self))
+        print(self.army_2.str_in_battle(self))
 
     def print_fights(self) -> None:
         all_fights = self.fight_pairs.two_way_pairs + self.fight_pairs.one_way_pairs

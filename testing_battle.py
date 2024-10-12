@@ -18,7 +18,7 @@ def do_single_terrain_battle(army_1, army_2, terrain, name="testing_out"):
     if graphical:
         GraphicBattle(army_1, army_2, landscape, (1080, 720), name).do(10)
     else:
-        Battle(army_1, army_2, landscape).do(10)
+        Battle(army_1, army_2, landscape).do(100)
 
 
 """ spear - sword - pike trichotomy """
@@ -29,7 +29,7 @@ def test_A1():
     army_1, army_2 = preamble()
     army_1.add(0, spear)
     army_2.add(0, sword)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_A2():
@@ -163,7 +163,7 @@ def test_C2():
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(1, h_horse).add(2, h_horse)  # NOTE DELIBERATE OFFSET
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 def test_C3():
@@ -219,7 +219,7 @@ def test_D3():
 
 def test_D4():
     # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for all melee units
-    x = sword
+    x = spear
     army_1, army_2 = preamble()
     army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
     army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
@@ -232,7 +232,7 @@ def test_D4():
 def test_E1():
     # Militia power so that they just lose
     from Battle import UnitType
-    militia = UnitType("Militia", 202)  # -88
+    militia = UnitType("Militia", 198)  # -92
 
     army_1, army_2 = preamble()
     army_1.add(0, sword)
@@ -243,7 +243,7 @@ def test_E1():
 def test_E2():
     # Militia power so that they just lose
     from Battle import UnitType
-    militia = UnitType("Militia", 223)  # -67
+    militia = UnitType("Militia", 219)  # -71
 
     army_1, army_2 = preamble()
     army_1.add(-1, sword).add(0, sword).add(1, sword)
@@ -254,7 +254,7 @@ def test_E2():
 def test_E3():
     # Militia power so that they just lose
     from Battle import UnitType
-    militia = UnitType("Militia", 232)  # -98
+    militia = UnitType("Militia", 228)  # -92
 
     army_1, army_2 = preamble()
     army_1.add(-1, pike).add(0, pike).add(1, pike)
@@ -265,7 +265,7 @@ def test_E3():
 def test_E4():
     # Militia power so that they just lose
     from Battle import UnitType
-    militia = UnitType("P Militia", 239, 0.6)  # -91
+    militia = UnitType("P Militia", 235, 0.6)  # -95
 
     army_1, army_2 = preamble()
     army_1.add(-1, pike).add(0, pike).add(1, pike)
@@ -343,7 +343,7 @@ def test_G1():
 
 def test_G2():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
@@ -380,3 +380,6 @@ def test_G4():
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+test_G2()

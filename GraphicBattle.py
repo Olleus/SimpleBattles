@@ -154,6 +154,7 @@ class Scene:
         if Config.FRAME_COUNTER:
             ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
+        self.frames.append(self.canvas)
 
     def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], power: float,
                         bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
@@ -258,7 +259,7 @@ class GraphicBattle(Battle):
         max_file = max(max(self.army_1.file_units), max(self.army_2.file_units))
         # Allowing space for physical size of starting units
         min_pos = min(x.init_pos for x in self.army_1.file_units.values()) - 0.5
-        max_pos = max(x.init_pos for x in self.army_1.file_units.values()) + 0.5
+        max_pos = max(x.init_pos for x in self.army_2.file_units.values()) + 0.5
         self.scene = Scene(self.max_screen, self.landscape, min_file, max_file, min_pos, max_pos)
 
     def do_turn(self, verbosity: int) -> None:
