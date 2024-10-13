@@ -54,7 +54,7 @@ class Scene:
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
-        self.font_size = int(self.pixel_per_pos / 2.1)  # Allows text to fit nicely in unit rect
+        self.font_size = int(self.pixel_per_pos / 2.2)  # Allows text to fit nicely in unit rect
 
         self.draw_background()
 

@@ -20,7 +20,7 @@ MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
 FILE_WIDTH: float = 5            # Width of file
 RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
 MIN_DEPLOY_DIST: float = 0.5     # Closest to edge of the map that reserves will deploy
-FAST_DISTANCE: float = 2         # Distance from enemy at which units in LINE become FAST
+FAST_DISTANCE: float = 3         # Distance from enemy at which units in LINE become FAST  # TODO: Test change
 SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement

@@ -74,6 +74,8 @@ def test_A6():
 
 """ Adding in ranged units to the mix """
 
+# TODO: Redo tests with new (weaker values) for all of these
+
 
 def test_B1():
     # spears win on even, javelins win on rough
