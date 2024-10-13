@@ -319,8 +319,9 @@ class GraphicBattle(Battle):
         super().do(verbosity)
         frames = self.make_padding_frames()
 
+        # loop=0 makes gif loop better on some platforms, even if not needed for others
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:],
-                       duration=Config.FRAME_MS, loop=True, optimise=True)
+                       duration=Config.FRAME_MS, loop=0)
         print(f"Animation saved to {self.gif_name}")
 
     def do_to_buffer(self) -> BytesIO:
@@ -329,8 +330,9 @@ class GraphicBattle(Battle):
         frames = self.make_padding_frames()
 
         stream = BytesIO()
+        # loop=0 makes gif loop better on some platforms, even if not needed for others
         frames[0].save(stream, format="GIF", save_all=True, append_images=frames[1:],
-                       duration=Config.FRAME_MS, loop=True)
+                       duration=Config.FRAME_MS, loop=0)
         return stream
 
     def make_padding_frames(self) -> list[Image.Image]:
