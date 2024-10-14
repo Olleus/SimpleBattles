@@ -62,14 +62,13 @@ class PresetLandscapes:
 
     @staticmethod
     def forested_hill() -> Landscape:
-        terrain = {
-            -3: {inf: even},
-            -2: {-1.5: even, 3: rough, inf: even},
-            -1: {-2.5: even, 4.5: forest, inf: even},
-            0: {-5: even, -3.5: rough, 3.5: forest, 5: rough, inf: even},
-            1: {-4.5: even, 2.5: forest, inf: even},
-            2: {-3: even, 1.5: rough, inf: even},
-            3: {inf: even}}
+        terrain = {-3: {inf: even},
+                   -2: {-1.5: even, 3: rough, inf: even},
+                   -1: {-2.5: even, 4.5: forest, inf: even},
+                   0: {-5: even, -3.5: rough, 3.5: forest, 5: rough, inf: even},
+                   1: {-4.5: even, 2.5: forest, inf: even},
+                   2: {-3: even, 1.5: rough, inf: even},
+                   3: {inf: even}}
 
         height: dict[tuple[float, float], float] = {(0, 0): 5,
                                                     (-0.9, -5.1): 0,
@@ -80,14 +79,13 @@ class PresetLandscapes:
 
     @staticmethod
     def rocky_hill() -> Landscape:
-        terrain = {
-            -3: {inf: even},
-            -2: {-3: even, 1.5: broken, inf: even},
-            -1: {-3: even, -1.5: broken, 1: ragged, 2: broken, inf: even},
-            0: {-4: even, -3: broken, 3: ragged, 4: broken, inf: even},
-            1: {-2: even, -1: broken, 1.5: ragged, 3: broken, inf: even},
-            2: {-1.5: even, 3: broken, inf: even},
-            3: {inf: even}}
+        terrain = {-3: {inf: even},
+                   -2: {-3: even, 1.5: broken, inf: even},
+                   -1: {-3: even, -1.5: broken, 1: ragged, 2: broken, inf: even},
+                   0: {-4: even, -3: broken, 3: ragged, 4: broken, inf: even},
+                   1: {-2: even, -1: broken, 1.5: ragged, 3: broken, inf: even},
+                   2: {-1.5: even, 3: broken, inf: even},
+                   3: {inf: even}}
 
         height: dict[tuple[float, float], float] = {(0, 0): 6,
                                                     (-0.5, -5.1): 0,
