@@ -9,7 +9,7 @@ from PIL import Image, ImageColor, ImageDraw
 
 import Config
 from Battle import DEFAULT_TERRAIN, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, FILE_WIDTH, \
-                   Army, Battle, Landscape, Stance, Unit
+                   Army, Battle, BattleOutcome, Landscape, Stance, Unit
 
 
 UNIT_FILE_WIDTH: float = 0.95
@@ -315,14 +315,16 @@ class GraphicBattle(Battle):
             position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
             self.scene.paste_unit_image(image, None, position)
 
-    def do(self, verbosity: int) -> None:
-        super().do(verbosity)
+    def do(self, verbosity: int) -> BattleOutcome:
+        winner = super().do(verbosity)
         frames = self.make_padding_frames()
 
         # loop=0 makes gif loop better on some platforms, even if not needed for others
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:],
                        duration=Config.FRAME_MS, loop=0)
-        print(f"Animation saved to {self.gif_name}")
+        if verbosity > 0:
+            print(f"Animation saved to {self.gif_name}")
+        return winner
 
     def do_to_buffer(self) -> BytesIO:
         # Version of above useful for integrating into pyscript and displaying in browser

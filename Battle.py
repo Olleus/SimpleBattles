@@ -40,6 +40,14 @@ RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power t
 RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
 
 
+class BattleOutcome(Enum):
+    """The different potential situation after the battle has concluded"""
+    BOTH_LOST = 0   # Both armies end the battle with no remaining units
+    WIN_1 = 1       # Army 1 wins by having remaining units while army 2 does not
+    WIN_2 = 2       # Army 2 wins by having remaining units while army 1 does not
+    STALEMATE = 3   # Both armies have units remaining, but timed out or will not engage
+
+
 class Stance(Enum):
     """The lower number, the more aggressively the unit will move"""
     FAST = 0  # Moves at own speed always
@@ -680,7 +688,7 @@ class Battle:
     """ CORE LOOP """
     #################
 
-    def do(self, verbosity: int) -> None:
+    def do(self, verbosity: int) -> BattleOutcome:
         if verbosity >= 10:
             self.print_turn()
 
@@ -689,6 +697,7 @@ class Battle:
             self.do_turn(verbosity)
 
         self.print_result(verbosity)
+        return self.decide_winner()
 
     def do_turn(self, verbosity: int) -> None:
         self.tidy()
@@ -709,16 +718,15 @@ class Battle:
             return True
         return False
 
-    def get_winner(self) -> int:
-        """0 => both won, 1 => army_1 won, 2 => army_2 won, -1 => both lost """
+    def decide_winner(self) -> BattleOutcome:
         if self.army_1.defeated and self.army_2.defeated:
-            return -1
-        elif self.army_1.defeated and not self.army_2.defeated:
-            return 2
+            return BattleOutcome.BOTH_LOST
         elif not self.army_1.defeated and self.army_2.defeated:
-            return 1
+            return BattleOutcome.WIN_1
+        elif self.army_1.defeated and not self.army_2.defeated:
+            return BattleOutcome.WIN_2
         else:
-            return 0
+            return BattleOutcome.STALEMATE
 
     ############
     """ TIDY """
@@ -900,16 +908,18 @@ class Battle:
             print(string[:-3])
 
     def print_winner(self) -> None:
-        winner = self.get_winner()
+        winner = self.decide_winner()
         print(f"\nBattle lasted {self.turns} turns")
-        if winner == 0:
-            print("BOTH ARMIES WERE PARTIALLY VICTORIOUS")
-        elif winner == 1:
+        if winner is BattleOutcome.STALEMATE:
+            print("ARMIES FOUGHT TO A STALEMATE")
+        elif winner is BattleOutcome.WIN_1:
             print(f"{self.army_1.name.upper()} WAS VICTORIOUS")
-        elif winner == 2:
+        elif winner is BattleOutcome.WIN_2:
             print(f"{self.army_2.name.upper()} WAS VICTORIOUS")
-        elif winner == -1:
-            print("NEITHER ARMIES HELD THE FIELD")
+        elif winner is BattleOutcome.BOTH_LOST:
+            print("NEITHER ARMY HELD THE FIELD")
+        else:
+            raise ValueError(f"Unknown result of battle {winner}")
 
 
 def invert_dictionary(init: dict) -> dict:
