@@ -37,8 +37,9 @@ RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power t
 RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
 
 FILE_EMPTY: float = 0            # Morale for having an empty adjacent file
-FILE_SUPPORTED: float = 0.05     # Morale for having an adjacent file protected by a friendly unit
-FILE_VULNERABLE: float = -0.1    # Morale for having an adjacent file with a dangerously close enemy
+FILE_SUPPORTED: float = 0.1      # Morale for having an adjacent file protected by a friendly unit
+FILE_VULNERABLE: float = -0.2    # Morale for having an adjacent file with a dangerously close enemy
+DIST_MISSING_SUPPORT: float = 3  # How far behind support is assumed to be in the lack of friendlies
 
 
 class BattleOutcome(Enum):
@@ -222,6 +223,13 @@ class Unit:
 
     def get_eff_range_against(self, unit: Self) -> float:
         return self.att_range if unit.file == self.file else self.att_range - SIDE_RANGE_PENALTY
+
+    def get_signed_distance_to_unit(self, unit: Self) -> float:
+        """Positive means it's further ahead than the other unit, according to its own direction"""
+        if abs(self.position - self.init_pos) > abs(unit.position - self.init_pos):
+            return abs(unit.position - self.position)
+        else:
+            return -abs(unit.position - self.position)
 
     # WITH RESPECT TO LANDSCAPE
     def get_terrain(self, landscape: Landscape) -> Terrain:
@@ -793,23 +801,19 @@ class Battle:
 
     def _morale_from_contested_file(self, unit: Unit, file: int, army: Army, enemy: Army) -> float:
         """If a file is contested, give morale according to a linear scale between fully supported
-        and fulle contested, according to where a fictious "clash line" is between the two units"""
-        ene_pos = enemy.file_units[file].position
-        if abs(unit.position - unit.init_pos) > abs(ene_pos - unit.init_pos):
-            ene_dist = -abs(ene_pos - unit.position)
-        else:
-            ene_dist = abs(ene_pos - unit.position)
+        and fuly contested, according to where a fictious "clash line" is on that file"""
+        ene_dist = -unit.get_signed_distance_to_unit(enemy.file_units[file])
 
+        own_dist = -DIST_MISSING_SUPPORT
         if army.is_file_active(file):
-            own_pos = army.file_units[file].position
-            if abs(unit.position - unit.init_pos) > abs(own_pos - unit.init_pos):
-                own_dist = -abs(own_pos - unit.position)
-            else:
-                own_dist = abs(own_pos - unit.position)
-        else:
-            own_dist = -2
+            own_dist = max(own_dist, -unit.get_signed_distance_to_unit(army.file_units[file]))
 
-        mean_dist = (2*ene_dist + own_dist) / 3  # Distance of "clash" line, weighted towards enemy
+        # Mean is weighted to be the enemy: friendly units protect further than enemies threaten
+        mean_dist = (2*ene_dist + own_dist) / 3
+
+        return self._morale_from_mean_clash_distance(mean_dist)
+
+    def _morale_from_mean_clash_distance(self, mean_dist: float) -> float:
         if mean_dist > 0.5:
             return FILE_SUPPORTED
         elif mean_dist < -0.5:

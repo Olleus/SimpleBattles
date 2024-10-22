@@ -69,11 +69,14 @@ class Scene:
     def get_line_width(self, morale_gain: float) -> int:
         if morale_gain >= FILE_SUPPORTED:
             return 4
-        elif morale_gain <= FILE_VULNERABLE:
+        elif morale_gain > 0:
+            return 3
+        elif morale_gain == FILE_EMPTY:
+            return 2
+        elif morale_gain > FILE_VULNERABLE:
             return 1
         else:
-            fraction = (morale_gain - FILE_VULNERABLE) / (FILE_SUPPORTED - FILE_VULNERABLE)
-            return 1 + int(3 * fraction)
+            return 0
 
     def get_blended_color(self, color_1: str, color_2: str) -> tuple[int, ...]:
         c1 = ImageColor.getrgb(color_1)
@@ -166,7 +169,6 @@ class Scene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
         # Draw Text
-        # TODO: Make this battle.get_unit_eff_morale()
         string = f"{unit.name} {100*morale:.0f}%: {power:.0f}"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 

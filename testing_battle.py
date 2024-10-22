@@ -382,4 +382,4 @@ def test_G4():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-test_G4()
+test_F2()
