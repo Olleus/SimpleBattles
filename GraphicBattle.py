@@ -66,16 +66,14 @@ class Scene:
         pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
 
-    def get_line_width(self, file_state: float) -> int:
-        # Change line thickness on edge of unit rectangle depanding on state of flanks
-        if file_state == FILE_EMPTY:
-            return 2
-        elif file_state == FILE_VULNERABLE:
+    def get_line_width(self, morale_gain: float) -> int:
+        if morale_gain >= FILE_SUPPORTED:
+            return 4
+        elif morale_gain <= FILE_VULNERABLE:
             return 1
-        elif file_state == FILE_SUPPORTED:
-            return 3
         else:
-            raise RuntimeError("Unexpected value for unit.army.file_state()")
+            fraction = (morale_gain - FILE_VULNERABLE) / (FILE_SUPPORTED - FILE_VULNERABLE)
+            return 1 + int(3 * fraction)
 
     def get_blended_color(self, color_1: str, color_2: str) -> tuple[int, ...]:
         c1 = ImageColor.getrgb(color_1)
@@ -155,10 +153,10 @@ class Scene:
         self.frames.append(self.canvas)
         del self.canvas
 
-    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], power: float,
-                        bkgd: str | tuple[int, int, int, int] = (255, 255, 255, 64)) -> Image.Image:
+    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float],
+                        power: float, morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
-        image = Image.new(mode="RGBA", size=(int(x+1), int(y+2)), color=bkgd)
+        image = Image.new(mode="RGBA", size=(int(x+2), int(y+2)), color=bkgd_color)
         draw = ImageDraw.Draw(image)
 
         # Draw Rectangle
@@ -168,7 +166,8 @@ class Scene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
         # Draw Text
-        string = f"{unit.name} {100*unit.morale:.0f}%: {power:.0f}"
+        # TODO: Make this battle.get_unit_eff_morale()
+        string = f"{unit.name} {100*morale:.0f}%: {power:.0f}"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
         # Draw Stance
@@ -289,9 +288,10 @@ class GraphicBattle(Battle):
     def draw_deployed_units(self, army: Army) -> None:
         for unit in army.deployed_units:
             power = self.get_unit_eff_power(unit)
-            flanks = (self.check_adjacent_file_state(unit, -1),
-                      self.check_adjacent_file_state(unit, +1))
-            image = self.scene.draw_unit_image(unit, army.color, flanks, power)
+            morale = self.get_unit_eff_morale(unit)
+            flanks = (self.get_morale_from_supporting_file(unit, unit.file - 1),
+                      self.get_morale_from_supporting_file(unit, unit.file + 1))
+            image = self.scene.draw_unit_image(unit, army.color, flanks, power, morale)
             self.scene.paste_unit_image(image, unit.file, unit.position)
 
     def draw_removed_units(self, army: Army) -> None:
@@ -301,8 +301,8 @@ class GraphicBattle(Battle):
             if unit.file not in present:
                 present.add(unit.file)
 
-                power = unit.reduced_power
-                image = self.scene.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY), power)
+                image = self.scene.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY),
+                                                   unit.power, unit.morale)
                 position = unit.init_pos - 0.01  # offset needed because of rouning errors
                 position += 2 if position > 0 else -2
                 self.scene.paste_unit_image(image, unit.file, position)
@@ -310,7 +310,7 @@ class GraphicBattle(Battle):
     def draw_reserve_units(self, army: Army) -> None:
         for slot, unit in enumerate(reversed(army.reserves)):
             image = self.scene.draw_unit_image(unit, army.color, (FILE_EMPTY, FILE_EMPTY),
-                                               unit.reduced_power, bkgd="White")
+                                               unit.power, unit.morale, bkgd_color="White")
             position = unit.init_pos
             position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
             self.scene.paste_unit_image(image, None, position)

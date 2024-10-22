@@ -367,7 +367,7 @@ def test_G3():
 
 def test_G4():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.HOLD)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -380,3 +380,6 @@ def test_G4():
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+test_G4()

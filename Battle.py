@@ -3,7 +3,7 @@
 from enum import Enum
 from itertools import chain
 from math import log
-from typing import Iterable, Self
+from typing import Callable, Iterable, Self
 
 from attrs import define, Factory, field, validators
 
@@ -33,11 +33,12 @@ POWER_SCALE: float = 50          # This much power difference results in a 2:1 c
 LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
 TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity+speed
 HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
-FILE_EMPTY: float = 0            # Power for having an empty adjacent file
-FILE_SUPPORTED: float = 10       # Power for having an adjacent file protected by a friendly unit
-FILE_VULNERABLE: float = -20     # Power for having an adjacent file with a dangerously close enemy
 RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power to deployed unit
 RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
+
+FILE_EMPTY: float = 0            # Morale for having an empty adjacent file
+FILE_SUPPORTED: float = 0.05     # Morale for having an adjacent file protected by a friendly unit
+FILE_VULNERABLE: float = -0.1    # Morale for having an adjacent file with a dangerously close enemy
 
 
 class BattleOutcome(Enum):
@@ -162,7 +163,8 @@ class Unit:
 
     def str_in_battle(self, battle: "Battle") -> str:
         return f"{self.name:<10} | " \
-               f"{battle.get_unit_eff_power(self):<5.0f}P  {100*self.morale:<5.1f}M | " \
+               f"{battle.get_unit_eff_power(self):<5.0f}P  "\
+               f"{100*battle.get_unit_eff_morale(self):<5.1f}M | " \
                f"({self.file:>2}, {self.position: .3f}, {self.get_height(battle.landscape):.2f})"
 
     ##########################
@@ -192,10 +194,6 @@ class Unit:
     @property
     def smoothness_desire(self) -> float:
         return self.rigidity + (self.speed - 1)
-
-    @property
-    def reduced_power(self) -> float:
-        return self.power - LOW_MORALE_POWER * (1 - (self.morale ** (1+self.rigidity)))
 
     def get_dist_to(self, position: float) -> float:
         return abs(self.position - position)
@@ -238,15 +236,12 @@ class Unit:
     def get_eff_speed(self, landscape: Landscape) -> float:
         return self.speed * (1 - self.get_terrain(landscape).roughness)
 
-    def get_power_on_terrain(self, landscape: Landscape) -> float:
+    def get_power_from_terrain(self, landscape: Landscape) -> float:
         terrain = self.get_terrain(landscape)
         power_terrain = -TERRAIN_POWER * terrain.roughness * self.smoothness_desire
         power_terrain = min(0, power_terrain) if terrain.penalty else power_terrain
         power_height = self.get_height(landscape) * HEIGHT_DIF_POWER
-        return self.reduced_power + power_terrain + power_height
-
-    def get_cover_weighted_power(self, landscape: Landscape) -> float:
-        return self.get_power_on_terrain(landscape) + 10 * self.get_cover(landscape)
+        return power_terrain + power_height
 
     #####################
     """ BASIC SETTERS """
@@ -275,38 +270,32 @@ class Unit:
 
     def _change_morale(self, change: float) -> None:
         # Do not call directly, use army.change_unit_morale
-        self.morale = capped(0, self.morale + change, 1)
+        self.morale += change
         if change < 0:
             self.stance = Stance.FAST
-
-    def update_status(self) -> None:
-        if self.position == -self.init_pos and self.morale > 0:
-            self.pursuing = True
-        else:
-            self.pursuing = False
 
     ########################
     """ COMPLEX MOVEMENT """
     ########################
 
     def move_towards_haltingly(self, target: float, speed: float, backwards_unit: Self | None,
-                               landscape: Landscape) -> None:
-        """Confirm movement only if it does not reduce power or increase distance from supporting
+                               desirability_method: Callable[[Self], float]) -> None:
+        """Confirm movement only if it does not reduce desire or increase distance from supporting
         units on the flanks too much"""
         old_pos = self.position
-        old_mod_power = self.get_cover_weighted_power(landscape)
+        old_desire = desirability_method(self)
         old_lag = self.get_dist_to(backwards_unit.position) if backwards_unit else 0
 
         self.move_towards(target, speed)
 
-        new_mod_power = self.get_cover_weighted_power(landscape)
+        new_desire = desirability_method(self)
         new_lag = self.get_dist_to(backwards_unit.position) if backwards_unit else 0
-        power_grad = (old_mod_power-new_mod_power) / self.get_dist_to(old_pos)
+        power_grad = (old_desire - new_desire) / self.get_dist_to(old_pos)
 
         self.confirm_move(power_grad, old_pos, old_lag, new_lag)
 
     def confirm_move(self, gradient: float, old_pos: float, old_lag: float, new_lag: float) -> None:
-        """Undoes movement if it weakens the unit too much, or allows it"""
+        """Undoes movement if it weakens the unit too much, otherwise allows it"""
         if self.get_dist_to(self.init_pos) < MIN_DEPLOY_DIST:
             self.stance = Stance.HOLD
 
@@ -456,32 +445,6 @@ class Army:
 
         return ordered_units[min(ordered_units)] if ordered_units else None
 
-    def check_file_state(self, file: int, ref_pos: float, other_army: Self) -> float:
-        """Who has units in that file and, if both, who is closer to the reference position"""
-        self_pre = self.is_file_active(file)
-        enem_pre = other_army.is_file_active(file)
-
-        if self_pre and not enem_pre:
-            return FILE_SUPPORTED
-
-        elif not self_pre and enem_pre:
-            return FILE_VULNERABLE
-
-        elif not self_pre and not enem_pre:
-            return FILE_EMPTY
-
-        else:
-            return self._check_contested_file_state(file, ref_pos, other_army)
-
-    def _check_contested_file_state(self, file: int, ref_pos: float, other_army: Self) -> float:
-        self_dist = self.file_units[file].get_dist_to(ref_pos)
-        enem_dist = other_army.file_units[file].get_dist_to(ref_pos)
-
-        if self_dist > 1.0 and enem_dist < self_dist:
-            return FILE_VULNERABLE
-        else:
-            return FILE_SUPPORTED
-
     def is_file_active(self, file: int) -> bool:
         return file in self.file_units
 
@@ -555,7 +518,7 @@ class Army:
 
 @define(eq=False)
 class FightPairs:
-    """Decides which units will attack which other units"""
+    """Decides which units will attack which other units and stores this as lists of tuples"""
     army_1: Army
     army_2: Army
     _potentials: dict[Unit, set[Unit]] = field(init=False, default=Factory(dict))
@@ -746,7 +709,7 @@ class Battle:
                     other_army.change_all_units_morale(PURSUE_MORALE)
 
     def reduce_files(self) -> None:
-        """If a unit is pursuing, has no adjacent enemies, and can slide towards centre, do so"""
+        """If a unit is pursuing, has no adjacent enemies, and can slide towards centre; do so"""
         for unit in list(self.iter_all_deployed()):
             if unit.pursuing and unit.file != 0:
                 army = self.get_army_deployed_in(unit)
@@ -757,10 +720,16 @@ class Battle:
 
     def update_status(self) -> None:
         for unit in list(self.iter_all_deployed()):
-            unit.update_status()
-            if unit.morale <= 0 or unit.position == unit.init_pos:
+
+            if self.get_unit_eff_morale(unit) <= 0 or unit.position == unit.init_pos:
                 army = self.get_army_deployed_in(unit)
                 army.remove_unit(unit, self.get_other_army(army))
+
+            elif unit.position == -unit.init_pos and self.get_unit_eff_morale(unit) > 0:
+                unit.pursuing = True
+
+            else:
+                unit.pursuing = False
 
     ################
     """ FIGHTING """
@@ -796,15 +765,58 @@ class Battle:
         return 2.0 ** (power_dif / (2*POWER_SCALE))
 
     def get_unit_eff_power(self, unit: Unit) -> float:
-        power = unit.get_power_on_terrain(self.landscape)
-        power += self.check_adjacent_file_state(unit, 1) * (1 + unit.rigidity)
-        power += self.check_adjacent_file_state(unit, -1) * (1 + unit.rigidity)
+        power = unit.power
+        power += unit.get_power_from_terrain(self.landscape)
         power += self.get_army_deployed_in(unit).reserve_power
+        power += self.get_unit_power_from_morale(unit)
         return power
 
-    def check_adjacent_file_state(self, unit: Unit, adj: int) -> float:
+    def get_unit_power_from_morale(self, unit: Unit) -> float:
+        return -LOW_MORALE_POWER * (1 - (self.get_unit_eff_morale(unit) ** (1+unit.rigidity)))
+
+    def get_unit_eff_morale(self, unit: Unit) -> float:
+        morale = unit.morale
+        morale += self.get_morale_from_supporting_file(unit, unit.file + 1)
+        morale += self.get_morale_from_supporting_file(unit, unit.file - 1)
+        return max(0, morale)
+
+    def get_morale_from_supporting_file(self, unit: Unit, file: int) -> float:
         army = self.get_army_deployed_in(unit)
-        return army.check_file_state(unit.file + adj, unit.position, self.get_other_army(army))
+        enemy = self.get_other_army(army)
+
+        if enemy.is_file_active(file):
+            return self._morale_from_contested_file(unit, file, army, enemy)
+        elif army.is_file_active(file):
+            return FILE_SUPPORTED
+        else:
+            return FILE_EMPTY
+
+    def _morale_from_contested_file(self, unit: Unit, file: int, army: Army, enemy: Army) -> float:
+        """If a file is contested, give morale according to a linear scale between fully supported
+        and fulle contested, according to where a fictious "clash line" is between the two units"""
+        ene_pos = enemy.file_units[file].position
+        if abs(unit.position - unit.init_pos) > abs(ene_pos - unit.init_pos):
+            ene_dist = -abs(ene_pos - unit.position)
+        else:
+            ene_dist = abs(ene_pos - unit.position)
+
+        if army.is_file_active(file):
+            own_pos = army.file_units[file].position
+            if abs(unit.position - unit.init_pos) > abs(own_pos - unit.init_pos):
+                own_dist = -abs(own_pos - unit.position)
+            else:
+                own_dist = abs(own_pos - unit.position)
+        else:
+            own_dist = -2
+
+        mean_dist = (2*ene_dist + own_dist) / 3  # Distance of "clash" line, weighted towards enemy
+        if mean_dist > 0.5:
+            return FILE_SUPPORTED
+        elif mean_dist < -0.5:
+            return FILE_VULNERABLE
+        else:
+            const = 0.5*(FILE_SUPPORTED + FILE_VULNERABLE)
+            return const + mean_dist * (FILE_SUPPORTED - FILE_VULNERABLE)
 
     def inflict_casualties(self, unit: Unit, balance: float) -> None:
         cover = unit.get_cover(self.landscape)
@@ -819,11 +831,11 @@ class Battle:
 
     def _push_from_winner(self, winner: Unit, loser: Unit, balance: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, capped by winners speed
-        dirct = 1 if loser.position < loser.init_pos else -1
+        direction = 1 if loser.position < loser.init_pos else -1
         loser_speed_scale = min(1, (balance-1) / (1+loser.rigidity))
         dist = min(winner.get_eff_speed(self.landscape),
                    loser.get_eff_speed(self.landscape) * loser_speed_scale)
-        dist *= BASE_SPEED * DELTA_T * dirct
+        dist *= BASE_SPEED * DELTA_T * direction
         loser.move_by(dist)
 
         # Winner chases only if it keeps fiht active
@@ -862,7 +874,7 @@ class Battle:
 
         elif unit.stance is Stance.HOLD or unit.stance is Stance.HALT:
             backwards_unit = self.get_army_deployed_in(unit).get_backwards_neighbor(unit)
-            unit.move_towards_haltingly(target, speed, backwards_unit, self.landscape)
+            unit.move_towards_haltingly(target, speed, backwards_unit, self.get_unit_pos_desire)
 
         else:
             raise ValueError(f"Unknown stance {unit.stance}")
@@ -871,6 +883,9 @@ class Battle:
         if unit.stance is Stance.FAST:
             return unit.get_eff_speed(self.landscape)
         return self.get_army_deployed_in(unit).get_communal_eff_speed(self.landscape)
+
+    def get_unit_pos_desire(self, unit: Unit) -> float:
+        return self.get_unit_eff_power(unit) + 10 * unit.get_cover(self.landscape)
 
     ################
     """ PRINTING """
