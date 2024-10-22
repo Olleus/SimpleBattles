@@ -97,6 +97,24 @@ class PresetLandscapes:
         return Landscape(terrain, height)
 
     @staticmethod
+    def rolling_green() -> Landscape:
+        terrain = {-3: {-2: forest, 2: even, inf: forest},
+                   -2: {-3: rough, 3: smooth, inf: even},
+                   -1: {-3: smooth, -1.5: even, 1.5: smooth, 4: even, inf: rough},
+                   0: {-4: even, -2: even, 2: smooth, 4: even, inf: rough},
+                   1: {-4: smooth, -2.5: even, 2: smooth, 4: even, inf: smooth},
+                   2: {-4.5: rough, -3: even, 2.5: rough, 4.5: smooth, inf: rough},
+                   3: {-3: even, 3: rough, inf: forest}}
+
+        height: dict[tuple[float, float], float] = {(-1.3, 2.1): 3,
+                                                    (1.4, -1.9): 3,
+                                                    (0, -0.7): 1,
+                                                    (-1.9, -2.8): 1,
+                                                    (0.4, 4.3): 0}
+
+        return Landscape(terrain, height)
+
+    @staticmethod
     def ridge() -> Landscape:
         terrain = {-3: {-2: ragged, 3: broken, inf: rough},
                    -2: {-0.5: broken, 4: rough, inf: even},

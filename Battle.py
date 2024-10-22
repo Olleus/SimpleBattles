@@ -11,7 +11,7 @@ import Config
 
 # Internal computation
 POS_DEC_DIG: int = 3             # Position is rounded to this many decimal places
-EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)  # Max error introduced by the above
+EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)  # Max error introduced by the above, use to force rounting
 DELTA_T: float = Config.DELTA_T  # Used to scale how much movement / casualties are done per 'tick'
 MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
 
@@ -19,27 +19,26 @@ MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
 # UNIT_HEIGHT = 1                # Height of all units
 FILE_WIDTH: float = 5            # Width of file
 RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
-MIN_DEPLOY_DIST: float = 0.5     # Closest to edge of the map that reserves will deploy
+MIN_DEPLOY_DIST: float = 1       # Closest to edge of the map that reserves will deploy
 FAST_DISTANCE: float = 3         # Distance from enemy at which units in LINE become FAST
 SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
 HALT_POWER_GRADIENT: float = 15  # Units in HOLD stop moving when power drops at this rate
-PURSUE_MORALE: float = -0.2      # Morale loss inflicted when a unit starts pursing off the map
 
 # Power
 POWER_SCALE: float = 50          # This much power difference results in a 2:1 casualty ratio
 LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
 TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity+speed
 HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
-RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power to deployed unit
-RESERVES_SOFT_CAP: float = 400   # Scale which determines how sharply the above diminishes
+RESERVES_POWER: float = 1/6      # Rate at which reserves give their own power to deployed unit
+RESERVES_SOFT_CAP: float = 500   # Scale which determines how sharply the above diminishes
 
 FILE_EMPTY: float = 0            # Morale for having an empty adjacent file
 FILE_SUPPORTED: float = 0.1      # Morale for having an adjacent file protected by a friendly unit
-FILE_VULNERABLE: float = -0.2    # Morale for having an adjacent file with a dangerously close enemy
-DIST_MISSING_SUPPORT: float = 3  # How far behind support is assumed to be in the lack of friendlies
+FILE_VULNERABLE: float = -0.20   # Morale for having an adjacent file with a dangerously close enemy
+PURSUE_MORALE: float = -0.25     # Morale loss inflicted when a unit starts pursing off the map
 
 
 class BattleOutcome(Enum):
@@ -804,12 +803,15 @@ class Battle:
         and fuly contested, according to where a fictious "clash line" is on that file"""
         ene_dist = -unit.get_signed_distance_to_unit(enemy.file_units[file])
 
-        own_dist = -DIST_MISSING_SUPPORT
+        own_dist = -RESERVE_DIST_BEHIND  # If not friendly, assume this far behind
         if army.is_file_active(file):
             own_dist = max(own_dist, -unit.get_signed_distance_to_unit(army.file_units[file]))
 
-        # Mean is weighted to be the enemy: friendly units protect further than enemies threaten
-        mean_dist = (2*ene_dist + own_dist) / 3
+        """Mean is weighted to be the enemy: friendly units protect further than enemies threaten
+        Matches RESERVE_DIST_BEHIND such that flanking melee range just causes full vulnerablity
+        when there are no supporting units"""
+        weight = RESERVE_DIST_BEHIND - 0.5
+        mean_dist = (weight*ene_dist + own_dist) / (1+weight)
 
         return self._morale_from_mean_clash_distance(mean_dist)
 

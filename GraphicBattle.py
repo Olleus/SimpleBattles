@@ -111,6 +111,8 @@ class Scene:
     def plot_contour_graph(self) -> BytesIO:
         X, Y, h = self.make_vectors_for_contour_graph()
         levels = np.arange(np.min(h), np.max(h), 1)
+        if len(levels) <= 3:
+            levels = np.arange(np.min(h), np.max(h), 0.5)
 
         fig, ax = plt.subplots(frameon=False)
         ax.set_axis_off()
@@ -169,7 +171,7 @@ class Scene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
         # Draw Text
-        string = f"{unit.name} {100*morale:.0f}%: {power:.0f}"
+        string = f"{unit.name} {100*morale:.0f}% ({power:.0f})"
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
 
         # Draw Stance
