@@ -195,6 +195,22 @@ class Unit:
     def smoothness_desire(self) -> float:
         return self.rigidity + (self.speed - 1)
 
+    @property
+    def moving_to_pos(self):
+        return self.init_pos < 0
+
+    @property
+    def moving_to_neg(self):
+        return self.init_pos > 0
+
+    @property
+    def at_home(self):
+        return self.position == self.init_pos
+
+    @property
+    def at_end(self):
+        return self.position == -self.init_pos
+
     def get_dist_to(self, position: float) -> float:
         return abs(self.position - position)
 
@@ -224,11 +240,9 @@ class Unit:
         return self.att_range if unit.file == self.file else self.att_range - SIDE_RANGE_PENALTY
 
     def get_signed_distance_to_unit(self, unit: Self) -> float:
-        """Positive means it's further ahead than the other unit, according to its own direction"""
-        if abs(self.position - self.init_pos) > abs(unit.position - self.init_pos):
-            return abs(unit.position - self.position)
-        else:
-            return -abs(unit.position - self.position)
+        """Positive means the other unit is ahead of it, according to this unit's direction"""
+        dist = unit.position - self.position
+        return dist if unit.moving_to_pos else -dist
 
     # WITH RESPECT TO LANDSCAPE
     def get_terrain(self, landscape: Landscape) -> Terrain:
@@ -256,7 +270,7 @@ class Unit:
 
     def set_up(self, init_pos: float) -> None:
         self.init_pos = init_pos
-        self.position = init_pos + (EPS if init_pos < 0 else -EPS)
+        self.position = init_pos + (EPS if self.moving_to_pos else -EPS)
 
     def move_by(self, dist: float) -> None:
         self.position += dist
@@ -328,22 +342,21 @@ class Unit:
         elif self.position > target:
             self.move_to(max(self.position - speed*BASE_SPEED*DELTA_T, target))
 
-    def deploy_close_to(self, file: int, ref_pos: float) -> float:
+    def deploy_close_to(self, file: int, ref_pos: float):
         self.file = file
 
         # Give some breathing room to reserve units when deployed
-        if self.init_pos < 0:
+        if self.moving_to_pos:
             position = max(ref_pos - RESERVE_DIST_BEHIND, self.init_pos + MIN_DEPLOY_DIST)
         else:
             position = min(ref_pos + RESERVE_DIST_BEHIND, self.init_pos - MIN_DEPLOY_DIST)
         self.move_to(position)
-        return position
 
     def move_safely_away_from_pos(self, ref_pos: float) -> None:
         # Prevents overlapping units, jumps towards home as necessary
-        if self.position < ref_pos + 1 and self.init_pos > 0:
+        if self.position < ref_pos + 1 and self.moving_to_neg:
             self.move_to(ref_pos + 1)
-        elif self.position > ref_pos - 1 and self.init_pos < 0:
+        elif self.position > ref_pos - 1 and self.moving_to_pos:
             self.move_to(ref_pos - 1)
 
 
@@ -710,7 +723,7 @@ class Battle:
 
     def change_morale_from_first_pursue(self) -> None:
         for unit in self.iter_all_deployed():
-            if unit.position == -unit.init_pos:
+            if unit.at_end:
                 if not unit.pursuing:
                     other_army = self.get_other_army(self.get_army_deployed_in(unit))
                     other_army.change_all_units_morale(PURSUE_MORALE)
@@ -728,11 +741,11 @@ class Battle:
     def update_status(self) -> None:
         for unit in list(self.iter_all_deployed()):
 
-            if self.get_unit_eff_morale(unit) <= 0 or unit.position == unit.init_pos:
+            if self.get_unit_eff_morale(unit) <= 0 or unit.at_home:
                 army = self.get_army_deployed_in(unit)
                 army.remove_unit(unit, self.get_other_army(army))
 
-            elif unit.position == -unit.init_pos and self.get_unit_eff_morale(unit) > 0:
+            elif unit.at_end and self.get_unit_eff_morale(unit) > 0:
                 unit.pursuing = True
 
             else:
@@ -801,11 +814,11 @@ class Battle:
     def _morale_from_contested_file(self, unit: Unit, file: int, army: Army, enemy: Army) -> float:
         """If a file is contested, give morale according to a linear scale between fully supported
         and fuly contested, according to where a fictious "clash line" is on that file"""
-        ene_dist = -unit.get_signed_distance_to_unit(enemy.file_units[file])
+        ene_dist = unit.get_signed_distance_to_unit(enemy.file_units[file])
 
         own_dist = -RESERVE_DIST_BEHIND  # If not friendly, assume this far behind
         if army.is_file_active(file):
-            own_dist = max(own_dist, -unit.get_signed_distance_to_unit(army.file_units[file]))
+            own_dist = max(own_dist, unit.get_signed_distance_to_unit(army.file_units[file]))
 
         """Mean is weighted to be the enemy: friendly units protect further than enemies threaten
         Matches RESERVE_DIST_BEHIND such that flanking melee range just causes full vulnerablity
@@ -837,11 +850,10 @@ class Battle:
 
     def _push_from_winner(self, winner: Unit, loser: Unit, balance: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, capped by winners speed
-        direction = 1 if loser.position < loser.init_pos else -1
         loser_speed_scale = min(1, (balance-1) / (1+loser.rigidity))
         dist = min(winner.get_eff_speed(self.landscape),
                    loser.get_eff_speed(self.landscape) * loser_speed_scale)
-        dist *= BASE_SPEED * DELTA_T * direction
+        dist *= BASE_SPEED * DELTA_T * (1 if winner.moving_to_pos else -1)
         loser.move_by(dist)
 
         # Winner chases only if it keeps fiht active
