@@ -346,15 +346,15 @@ def utils_for_G_tests(stance_1: Stance, stance_2: Stance):
 
 
 def test_G1():
-    # Check all combinations of stances look reasonable
+    # Check all combinations of NEUT and NEUT look reasonable
     army_1, army_2, terrain = utils_for_G_tests(Stance.NEUT, Stance.NEUT)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
 def test_G2():
-    # Check it looks good for all combinations of DEFN, and NEUT
-    army_1, army_2, terrain = utils_for_G_tests(Stance.NEUT, Stance.DEFN)
+    # Check all combinations of stances look reasonable
+    army_1, army_2, terrain = utils_for_G_tests(Stance.DEFN, Stance.NEUT)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -370,14 +370,14 @@ def test_G2():
 
 
 def test_G3():
-    # Check it looks good for all combinations of DEFN, and NEUT
+    # Check how DEFN behaves on very steep terrain
     army_1, army_2, terrain = utils_for_G_tests(Stance.DEFN, Stance.DEFN)
 
-    height = {(2.2, 0): -3,
-              (0.9, 0): -3,
-              (0, 0): -3,
-              (-0.9, 0): -3,
-              (-2.2, 0): -3,
+    height = {(2.2, 0): -4,
+              (0.9, 0): -4,
+              (0, 0): -4,
+              (-0.9, 0): -4,
+              (-2.2, 0): -4,
               (-1.2, 7.5): 5,
               (1.6, 6.5): 0,
               (-1.6, -7.5): 0,
@@ -386,4 +386,4 @@ def test_G3():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-test_G1()
+test_G2()

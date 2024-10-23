@@ -1,8 +1,8 @@
 """Contains all logic for creating and resolving battles"""
 
-from enum import Enum, IntEnum
+from enum import IntEnum
 from itertools import chain
-from math import log
+from math import log, prod
 from typing import Any, Iterable, Self
 
 from attrs import define, Factory, field, validators
@@ -18,12 +18,12 @@ DELTA_T: float = Config.DELTA_T  # Used to scale how much movement / casualties 
 # UNIT_HEIGHT = 1                # Height of all units
 RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
 MIN_DEPLOY_DIST: float = 1       # Closest to edge of the map that reserves will deploy
-CHARGE_DISTANCE: float = 2       # Distance from enemy at which units in AGGR break formation
 SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
-HALT_POWER_GRADIENT: float = 15  # Units in DEFN stop moving when power drops at this rate
+CHARGE_DISTANCE: float = 2       # Distance from enemy at which units in NEUT break formation
+HALT_POWER_GRADIENT: float = 20  # Units in DEFN stop moving when power drops at this rate
 
 # Power
 POWER_SCALE: float = 50          # This much power difference results in a 2:1 casualty ratio
@@ -39,7 +39,7 @@ FILE_SUPPORTED: float = 0.1      # Morale for having an adjacent file protected 
 FILE_VULNERABLE: float = -0.2    # Morale for having an adjacent file with a dangerously close enemy
 
 
-class BattleOutcome(Enum):
+class BattleOutcome(IntEnum):
     """The different potential situation after the battle has concluded"""
     BOTH_LOST = 0   # Both armies end the battle with no remaining units
     WIN_1 = 1       # Army 1 wins by having remaining units while army 2 does not
@@ -49,10 +49,9 @@ class BattleOutcome(Enum):
 
 class Stance(IntEnum):
     """The lower number, the more aggressively the unit will move"""
-    RUSH = 0  # Moves at full speed always 
-    AGGR = 1  # Moves in formation like NEUT, but charges ahead when close to enemy
-    NEUT = 2  # Furthest forward units slow down to speed of slowest units
-    DEFN = 3  # Same as NEUT, but halts moving would lower its power or break up the line 
+    AGGR = 0  # Units move at full speed always 
+    NEUT = 1  # Units slow down to speed of slowest laggards, but charge once close to enemy
+    DEFN = 2  # Units slow down to speed of slowest laggards, but halt when advantageous
 
 
 @define(frozen=True)
@@ -224,6 +223,7 @@ class Unit:
 
         else:
             # Increases percieved power gradient if moving away from supporting units
+            new_lag = min(new_lag, 1-self.EPS)
             gradient *= 1/(1-new_lag) if old_lag < new_lag else 1
 
             if gradient > HALT_POWER_GRADIENT:
@@ -270,7 +270,7 @@ class Army:
     removed: list[Unit] = field(init=False, default=Factory(list))
 
     def __str__(self) -> str:
-        string = f"{self.name}"
+        string = f"{self.name} in {self.stance.name}"
         for file, unit in self.file_units.items():
             string += f"\n    {file:>2}: {unit}"
         if self.reserves:
@@ -284,7 +284,7 @@ class Army:
         return string
 
     def str_in_battle(self, battle: "Battle") -> str:
-        string = f"{self.name}"
+        string = f"{self.name} in {self.stance.name}"
         for file, unit in self.file_units.items():
             string += f"\n    {file:>2}: {unit.str_in_battle(battle)}"
         if self.reserves:
@@ -354,15 +354,15 @@ class Army:
         return min(neighbors, key=lambda unit: sort_key(enemy, unit), default=None)
 
     def get_backwards_neighbor(self, ref_unit: Unit) -> Unit | None:
-        """Which unit adjacent to the given one is furthest back"""
-        neighbors = self.get_neighbors(ref_unit.file, include_self=False)
-        return min(neighbors,
-                   key=lambda unit: unit.get_dist_to(ref_unit.init_pos),  # type: ignore[union-attr]
-                   default=None)  
+        """Which unit adjacent to the given one is furthest back, if any"""
+        neighbors = self.get_neighbors(ref_unit.file, include_self=True)
+        unit = min(neighbors,
+                   key=lambda unit: unit.get_dist_to(unit.init_pos),  # type: ignore[union-attr]
+                   default=None)
+        return None if unit is ref_unit else unit  
 
     def get_neighbors(self, file: int, include_self: bool = False) -> Iterable[Unit]:
-        if include_self and self.is_file_active(file):
-            # Place first - priority when min/max'ing over the iterable
+        if include_self and self.is_file_active(file):  # Place first for sorting priority
             yield self.file_units[file]
 
         if self.is_file_active(file - 1):
@@ -495,7 +495,7 @@ class FightPairs:
                 (Recall that True > False)"""
             frontal = unit.is_in_front(target)
             dist = unit.get_dist_to(target.position)
-            melee = (dist <= 1) if frontal else (dist <= 1 - SIDE_RANGE_PENALTY)
+            melee = (dist <= 1+Unit.EPS) if frontal else (dist <= 1 - SIDE_RANGE_PENALTY+Unit.EPS)
             attacker = target in assigned_to.get(unit, set())
             unassigned = target not in self._assignments
 
@@ -574,11 +574,12 @@ class Battle:
     def reset_unit_stance(self, unit: Unit) -> None:
         unit.stance = self.get_army_deployed_in(unit).stance
 
-    def set_engaged_stances(self, unit: Unit) -> None:
+    def call_neighbors_forward(self, unit: Unit) -> None:
         """Make sure neighbors don't stay completely passive and join in if they can"""
         for neighbor in self.get_army_deployed_in(unit).get_neighbors(unit.file, False):
             if neighbor not in self.fight_pairs.all_engaged:
-                neighbor.stance = min(neighbor.stance, Stance.AGGR)
+                if neighbor.speed >= unit.speed:  # No point calling slower neighbors as backup
+                    neighbor.stance = min(neighbor.stance, Stance.NEUT)
 
     #################
     """ CORE LOOP """
@@ -658,8 +659,10 @@ class Battle:
             if self.get_unit_eff_morale(unit) <= 0 or unit.at_home:
                 army = self.get_army_deployed_in(unit)
                 army.remove_unit(unit, self.get_other_army(army))
+
             elif unit.at_end and self.get_unit_eff_morale(unit) > 0:
                 unit.pursuing = True
+
             else:
                 unit.pursuing = False
 
@@ -677,21 +680,17 @@ class Battle:
             self.fight_one_way(unit_A, unit_B)
 
     def fight_two_way(self, unit_A: Unit, unit_B: Unit) -> None:
-        self.set_engaged_stances(unit_A)
-        self.set_engaged_stances(unit_B)
-
         balance = self.compute_fight_balance(unit_A, unit_B)
         self.inflict_casualties(unit_A, 1/balance)
         self.inflict_casualties(unit_B, balance)
         self.push_from_fight(unit_A, unit_B, balance)
 
     def fight_one_way(self, unit_A: Unit, unit_B: Unit) -> None:
-        self.set_engaged_stances(unit_A)
-        self.set_engaged_stances(unit_B)
-
-        unit_B.stance = Stance.RUSH
         balance = self.compute_fight_balance(unit_A, unit_B)
         self.inflict_casualties(unit_B, balance)
+
+        unit_B.stance = Stance.AGGR
+        self.call_neighbors_forward(unit_B)
 
     def compute_fight_balance(self, unit_A: Unit, unit_B: Unit) -> float:
         power_dif = self.get_unit_eff_power(unit_A) - self.get_unit_eff_power(unit_B)
@@ -738,7 +737,8 @@ class Battle:
         when there are no supporting units"""
         weight = RESERVE_DIST_BEHIND - 0.5
         mean_dist = (weight*ene_dist + own_dist) / (1+weight)
-        return self._morale_from_mean_clash_distance(mean_dist)
+        morale = self._morale_from_mean_clash_distance(mean_dist)
+        return morale if army.is_file_active(file) else min(0, morale)
 
     def _morale_from_mean_clash_distance(self, mean_dist: float) -> float:
         if mean_dist > 0.5:
@@ -776,34 +776,32 @@ class Battle:
 
     def move(self) -> None:
         for unit in self.get_move_order():
+
             army = self.get_army_deployed_in(unit)
             enemy = self.get_other_army(army).get_blocking_unit(unit)
 
             if not enemy:
                 speed = unit.get_eff_speed(self.landscape)
                 unit.move_towards(-unit.init_pos, speed)
+
             elif not unit.is_in_range_of(enemy):
                 target = unit.get_position_to_attack_target(enemy)
                 self.move_unit_towards_in_stance(unit, target)
-            else:
-                pass  # If in range to fight, just fight (pushing is done separately)
 
     def get_move_order(self) -> list[Unit]:
         """Move melee units in centre first (last two are to break tie)"""
         return sorted(self.iter_all_deployed(), key=lambda x:
-                      (x.stance.value, x.speed, x.att_range, abs(x.file), -abs(x.position),
+                      (x.stance.value, -x.speed, x.att_range, abs(x.file), -abs(x.position),
                        x.file, x.position))
 
     def move_unit_towards_in_stance(self, unit: Unit, target: float) -> None:
         quick = unit.get_eff_speed(self.landscape) 
         slow = self.get_army_deployed_in(unit).get_cohesive_speed(unit, target, self.landscape)
 
-        if unit.stance is Stance.RUSH:
+        if unit.stance is Stance.AGGR:
             unit.move_towards(target, quick)
-        elif unit.stance is Stance.AGGR:
-            unit.move_towards(target, quick if unit.is_charge_range_of(target) else slow)
         elif unit.stance is Stance.NEUT:
-            unit.move_towards(target, slow)
+            unit.move_towards(target, quick if unit.is_charge_range_of(target) else slow)
         elif unit.stance is Stance.DEFN:
             self.move_towards_haltingly(unit, target, slow)
         else:
@@ -812,17 +810,21 @@ class Battle:
     def move_towards_haltingly(self, unit: Unit, target: float, speed: float) -> None:
         """Confirm movement only if it does not reduce desire or increase distance from supporting
         units on the flanks too much"""
-        backwards_unit = self.get_army_deployed_in(unit).get_backwards_neighbor(unit)
+        army = self.get_army_deployed_in(unit)
+        backwards_unit = army.get_backwards_neighbor(unit)
 
         old_pos = unit.position
         old_desire = self.get_unit_pos_desire(unit)
         old_lag = unit.get_dist_to(backwards_unit.position) if backwards_unit else 0
 
         unit.move_towards(target, speed)
-
         new_desire = self.get_unit_pos_desire(unit)
         new_lag = unit.get_dist_to(backwards_unit.position) if backwards_unit else 0
+
+        # Gradient of power change, reduced if neighbors are engaged
         power_grad = (old_desire - new_desire) / unit.get_dist_to(old_pos)
+        power_grad *= prod((0.5 for neighbor in army.get_neighbors(unit.file)
+                           if neighbor in self.fight_pairs.all_engaged))
 
         unit.confirm_move(power_grad, old_pos, old_lag, new_lag)
 
