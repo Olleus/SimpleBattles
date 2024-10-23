@@ -182,13 +182,13 @@ class Scene:
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
         r = self.pixel_per_pos * STANCE_ICON_FRAC
 
-        if unit.stance is Stance.FAST:
+        if unit.stance is Stance.RUSH:
+            draw.regular_polygon((3+r, 1+r, r), 3, fill=color, width=0)
+        elif unit.stance is Stance.AGGR:
             draw.regular_polygon((3+r, 1+r, r), 3, rotation=60, fill=color, width=0)
-
-        elif unit.stance is Stance.LINE:
+        elif unit.stance is Stance.NEUT:
             draw.regular_polygon((3+r, 3+r, r), 4, fill=color, width=0)
-
-        elif unit.stance is Stance.HOLD or unit.stance is Stance.HALT:
+        elif unit.stance is Stance.DEFN:
             draw.regular_polygon((3+r, 3+r, r), 4, rotation=45, fill=color, width=0)
 
     def paste_unit_image(self, image: Image.Image, file: float | None, position: float) -> None:
@@ -249,7 +249,7 @@ class Scene:
 class GraphicBattle(Battle):
     """Same as parent, but draws a frame every turn and then saves them as a gif
         GOOD PRACTICE TO CALL GARBAGE COLLECTOR - gc.collect(2) -
-        AFTER CLASS IS DONE TO FREE UP MEMORY FASTER"""
+        AFTER CLASS IS DONE TO FREE UP MEMORY AGGRER"""
     max_screen: tuple[int, int]
     gif_name: str
     scene: Scene = field(init=False)

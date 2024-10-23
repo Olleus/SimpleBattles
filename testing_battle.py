@@ -6,11 +6,11 @@ from GraphicBattle import GraphicBattle
 from Data import smooth, even, rough, broken, ragged, forest, river, PresetLandscapes, \
                  spear, sword, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
 
-graphical = False
+graphical = True
 
 
 def preamble():
-    return Army("Army 1", Stance.LINE, "DarkBlue"), Army("Army 2", Stance.LINE, "DarkRed")
+    return Army("Army 1", Stance.NEUT, "DarkBlue"), Army("Army 2", Stance.NEUT, "DarkRed")
 
 
 def do_single_terrain_battle(army_1, army_2, terrain, name="testing_out"):
@@ -332,11 +332,11 @@ def test_F3():
 
 def utils_for_G_tests(stance_1: Stance, stance_2: Stance):
     army_1 = Army("1", stance_1, "DarkBlue")
-    army_1.add(-2, archer).add(-1, sword).add(0, sword).add(1, sword).add(2, sword)
+    army_1.add(-2, archer).add(-1, sword).add(0, sword).add(1, sword).add(2, l_horse)
     army_1.add_reserves(h_horse)
 
     army_2 = Army("2", stance_2, "DarkRed")
-    army_2.add(-2, javelin).add(-1, pike).add(0, pike).add(1, pike).add(2, pike)
+    army_2.add(-2, javelin).add(-1, pike).add(0, pike).add(1, pike).add(2, h_horse)
     army_2.add_reserves(l_horse)
 
     ter = {file: {-4: even, -2: rough, -0.75: broken, 0.75: river, 2: broken, 4: rough, inf: even}
@@ -346,23 +346,15 @@ def utils_for_G_tests(stance_1: Stance, stance_2: Stance):
 
 
 def test_G1():
-    # Check FAST looks reasonable
-    army_1, army_2, terrain = utils_for_G_tests(Stance.FAST, Stance.LINE)
-    army_1.add(2, h_horse)
-    landscape = Landscape(terrain, {})
-    GraphicBattle(army_2, army_1, landscape, (1080, 720), "testing_out").do(10)
-
-
-def test_G2():
-    # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
+    # Check all combinations of stances look reasonable
+    army_1, army_2, terrain = utils_for_G_tests(Stance.NEUT, Stance.NEUT)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_G3():
-    # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
+def test_G2():
+    # Check it looks good for all combinations of DEFN, and NEUT
+    army_1, army_2, terrain = utils_for_G_tests(Stance.NEUT, Stance.DEFN)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -377,9 +369,9 @@ def test_G3():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_G4():
-    # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.HOLD)
+def test_G3():
+    # Check it looks good for all combinations of DEFN, and NEUT
+    army_1, army_2, terrain = utils_for_G_tests(Stance.DEFN, Stance.DEFN)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -394,4 +386,4 @@ def test_G4():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-test_G4()
+test_G1()

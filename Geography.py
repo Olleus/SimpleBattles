@@ -1,11 +1,9 @@
 """Contains all logic for creating and resolving battles"""
 from attrs import define, Factory, field, validators
 
-import Battle
 
-
-FILE_WIDTH: float = 5            # Width of file
-MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
+FILE_WIDTH: float = 5          # Width of file
+MAX_HEIGHT_INTERPOL: int = 10  # Number of points used to interpolate height
 
 
 @define(frozen=False)

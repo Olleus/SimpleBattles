@@ -2,6 +2,7 @@
 Old/*
 *.gif
 *.lnk
+temp.py
 
 # Do not upload files created when building releases
 */build/*
