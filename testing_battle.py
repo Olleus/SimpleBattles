@@ -1,6 +1,7 @@
-from math import inf  # noqa
+from math import inf
 
-from Battle import Army, Battle, Landscape, Stance
+from Battle import Army, Battle, Stance
+from Geography import Landscape
 from GraphicBattle import GraphicBattle
 from Data import smooth, even, rough, broken, ragged, forest, river, PresetLandscapes, \
                  spear, sword, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
@@ -272,10 +273,22 @@ def test_E4():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-""" Testing height """
+""" Testing landscape """
 
 
 def test_F1():
+    """Visually check that power changes smoothly with unit movement as intended"""
+    army_1, army_2 = preamble()
+    army_1.add(0, pike)
+    army_2.add(0, irreg)
+
+    terrain = {0: {-2.5: rough, -1.5: broken, -0.5: even, 0: ragged,
+                   0.5: smooth, 1: even, 2: forest, 3: river, 4: ragged, inf: even}}
+    landscape = Landscape(terrain, {})
+    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+def test_F2():
     # Minimum height for militia to make up for 30 power disadvantage
     from Battle import UnitType
     militia = UnitType("Militia", 260)
@@ -289,7 +302,7 @@ def test_F1():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_F2():
+def test_F3():
     # Army_1 wins with height map, just loses without it
     # Also check that contours are drawn properly
     army_1, army_2 = preamble()
@@ -342,14 +355,14 @@ def test_G1():
 
 def test_G2():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.LINE)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
 def test_G3():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.LINE)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -366,7 +379,7 @@ def test_G3():
 
 def test_G4():
     # Check it looks good for all combinations of HOLD, and LINE
-    army_1, army_2, terrain = utils_for_G_tests(Stance.LINE, Stance.HOLD)
+    army_1, army_2, terrain = utils_for_G_tests(Stance.HOLD, Stance.HOLD)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,

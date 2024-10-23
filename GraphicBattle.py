@@ -8,8 +8,9 @@ from attrs import define, Factory, field
 from PIL import Image, ImageColor, ImageDraw
 
 import Config
-from Battle import DEFAULT_TERRAIN, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, FILE_WIDTH, \
+from Battle import FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, \
                    Army, Battle, BattleOutcome, Landscape, Stance, Unit
+from Geography import DEFAULT_TERRAIN, FILE_WIDTH
 
 
 UNIT_FILE_WIDTH: float = 0.95

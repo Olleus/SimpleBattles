@@ -3,21 +3,20 @@
 from enum import Enum
 from itertools import chain
 from math import log
-from typing import Callable, Iterable, Self
+from typing import Any, Callable, Iterable, Self
 
 from attrs import define, Factory, field, validators
 
 import Config
+from Geography import Landscape
 
 # Internal computation
 POS_DEC_DIG: int = 3             # Position is rounded to this many decimal places
 EPS: float = 0.5 * (0.1 ** POS_DEC_DIG)  # Max error introduced by the above, use to force rounting
 DELTA_T: float = Config.DELTA_T  # Used to scale how much movement / casualties are done per 'tick'
-MAX_HEIGHT_INTERPOL: int = 10    # Number of points used to interpolate height
 
 # Distance
 # UNIT_HEIGHT = 1                # Height of all units
-FILE_WIDTH: float = 5            # Width of file
 RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
 MIN_DEPLOY_DIST: float = 1       # Closest to edge of the map that reserves will deploy
 FAST_DISTANCE: float = 3         # Distance from enemy at which units in LINE become FAST
@@ -35,10 +34,12 @@ HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height differen
 RESERVES_POWER: float = 1/6      # Rate at which reserves give their own power to deployed unit
 RESERVES_SOFT_CAP: float = 500   # Scale which determines how sharply the above diminishes
 
+PURSUE_MORALE: float = -0.25     # Morale loss inflicted when a unit starts pursing off the map
 FILE_EMPTY: float = 0            # Morale for having an empty adjacent file
 FILE_SUPPORTED: float = 0.1      # Morale for having an adjacent file protected by a friendly unit
-FILE_VULNERABLE: float = -0.20   # Morale for having an adjacent file with a dangerously close enemy
-PURSUE_MORALE: float = -0.25     # Morale loss inflicted when a unit starts pursing off the map
+FILE_VULNERABLE: float = -0.2    # Morale for having an adjacent file with a dangerously close enemy
+FILE_MEAN: float = 0.5*(FILE_SUPPORTED+FILE_VULNERABLE)
+FILE_DIFF: float = FILE_SUPPORTED - FILE_VULNERABLE
 
 
 class BattleOutcome(Enum):
@@ -55,81 +56,6 @@ class Stance(Enum):
     LINE = 1  # Moves at the slowest speed of the army
     HOLD = 2  # Same as LINE, but goes to HALT if moving would lower its power or break up the line 
     HALT = 3  # Same as Hold, but signals that last move was aborted
-
-
-@define(frozen=False)
-class Terrain:
-    """The different sorts of terrain that a landscape can be composed of"""
-    name: str
-    color: str = field(default="White")  # Must match HTML color names
-    roughness: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
-    cover: float = field(default=0, validator=[validators.gt(-1), validators.lt(1)])
-    penalty: bool = field(default=False)  # If true, roughness only decreases power
-
-
-DEFAULT_TERRAIN = Terrain("Undefined", "White")
-
-
-@define
-class Landscape:
-    """The map battles take place on, composed of terrains 'tiles' and an interpolatd height map"""
-    # VALIDATOR
-    def is_inner_dict_sorted(self, attribute, value):
-        for inner in value.values():
-            keys = list(inner.keys())
-            if not keys == sorted(keys):
-                raise ValueError("Keys in inner dict are not sorted as expected")
-
-    # Outer key is file, inner key upper limit to which that terrain goes to (from prior one)
-    terrain_map: dict[int, dict[float, Terrain]] = field(
-        converter=lambda x: dict(sorted(x.items())), validator=is_inner_dict_sorted)
-
-    # {(file, pos): height} - height at other locations interpolated from these
-    height_map: dict[tuple[float, float], float] = field(default=Factory(dict))
-
-    def get_terrain(self, file: int, pos: float) -> Terrain:
-        file_map = self.terrain_map.get(file, {})
-        for pos_bound, terrain in file_map.items():
-            if pos < pos_bound:
-                return terrain
-        return DEFAULT_TERRAIN
-
-    # File is a float rather than int here for drawing purposes
-    def get_height(self, file: float, pos: float) -> float:
-        ref_points = self.sort_nearest_points(file, pos)
-        num_points = len(ref_points)
-
-        if num_points == 0:
-            return 0  # Absolute default
-        elif num_points == 1:
-            return ref_points[0][-1]  # Forced default
-        elif (file, pos) in self.height_map:
-            return self.height_map[(file, pos)]  # Don't interpolate if at an exact point
-        else:
-            # Standard case - interpolates using up to maximum number of points
-            return self._calc_height(file, pos, ref_points[:MAX_HEIGHT_INTERPOL])
-
-    def _calc_height(self, file: float, pos: float, ref_points: list[tuple[float, float, float]]
-                     ) -> float:
-        """Height is the weighted average of the height of the nearest points, where the weight
-        is the inverse square of distance. Doing this quadratically makes nicely hills rounded"""
-        numerator = 0.0
-        denominator = 0.0
-        for x, y, h in ref_points:
-            w = 1/self.calc_sep_square(file, pos, x, y)
-            numerator += w * h
-            denominator += w
-        return numerator / denominator
-
-    def sort_nearest_points(self, file: float, pos: float) -> list[tuple[float, float, float]]:
-        if len(self.height_map) <= MAX_HEIGHT_INTERPOL:  # No need to sort if few enough points
-            return [(x, y, h) for (x, y), h in self.height_map.items()]
-
-        return sorted([(x, y, h) for (x, y), h in self.height_map.items()],
-                      key=lambda arg: self.calc_sep_square(file, pos, arg[0], arg[1]))
-
-    def calc_sep_square(self, file_A: float, pos_A: float, file_B: float, pos_B: float) -> float:
-        return ((file_A-file_B)*FILE_WIDTH)**2 + (pos_A-pos_B)**2
 
 
 @define(frozen=True)
@@ -242,27 +168,18 @@ class Unit:
     def get_signed_distance_to_unit(self, unit: Self) -> float:
         """Positive means the other unit is ahead of it, according to this unit's direction"""
         dist = unit.position - self.position
-        return dist if unit.moving_to_pos else -dist
+        return dist if self.moving_to_pos else -dist
 
     # WITH RESPECT TO LANDSCAPE
-    def get_terrain(self, landscape: Landscape) -> Terrain:
-        return landscape.get_terrain(self.file, self.position) 
-
     def get_height(self, landscape: Landscape) -> float:
         return landscape.get_height(self.file, self.position)
 
-    def get_cover(self, landscape: Landscape) -> float:
-        return self.get_terrain(landscape).cover
-
     def get_eff_speed(self, landscape: Landscape) -> float:
-        return self.speed * (1 - self.get_terrain(landscape).roughness)
+        return self.speed * (1 - landscape.get_terrain(self.file, self.position).roughness)
 
     def get_power_from_terrain(self, landscape: Landscape) -> float:
-        terrain = self.get_terrain(landscape)
-        power_terrain = -TERRAIN_POWER * terrain.roughness * self.smoothness_desire
-        power_terrain = min(0, power_terrain) if terrain.penalty else power_terrain
-        power_height = self.get_height(landscape) * HEIGHT_DIF_POWER
-        return power_terrain + power_height
+        rghn = landscape.get_mean_scaled_roughness(self.file, self.position, self.smoothness_desire)
+        return rghn*TERRAIN_POWER + self.get_height(landscape)*HEIGHT_DIF_POWER
 
     #####################
     """ BASIC SETTERS """
@@ -796,8 +713,8 @@ class Battle:
 
     def get_unit_eff_morale(self, unit: Unit) -> float:
         morale = unit.morale
-        morale += self.get_morale_from_supporting_file(unit, unit.file + 1)
-        morale += self.get_morale_from_supporting_file(unit, unit.file - 1)
+        morale += self.get_morale_from_supporting_file(unit, unit.file+1)
+        morale += self.get_morale_from_supporting_file(unit, unit.file-1)
         return max(0, morale)
 
     def get_morale_from_supporting_file(self, unit: Unit, file: int) -> float:
@@ -820,12 +737,11 @@ class Battle:
         if army.is_file_active(file):
             own_dist = max(own_dist, unit.get_signed_distance_to_unit(army.file_units[file]))
 
-        """Mean is weighted to be the enemy: friendly units protect further than enemies threaten
+        """Mean is weighted towards the enemy: friendly units protect further than enemies threaten.
         Matches RESERVE_DIST_BEHIND such that flanking melee range just causes full vulnerablity
         when there are no supporting units"""
         weight = RESERVE_DIST_BEHIND - 0.5
         mean_dist = (weight*ene_dist + own_dist) / (1+weight)
-
         return self._morale_from_mean_clash_distance(mean_dist)
 
     def _morale_from_mean_clash_distance(self, mean_dist: float) -> float:
@@ -834,12 +750,11 @@ class Battle:
         elif mean_dist < -0.5:
             return FILE_VULNERABLE
         else:
-            const = 0.5*(FILE_SUPPORTED + FILE_VULNERABLE)
-            return const + mean_dist * (FILE_SUPPORTED - FILE_VULNERABLE)
+            return FILE_MEAN + mean_dist*FILE_DIFF
 
     def inflict_casualties(self, unit: Unit, balance: float) -> None:
-        cover = unit.get_cover(self.landscape)
-        change = -DELTA_T * (1 - cover) * balance
+        cover = 1 - self.landscape.get_mean_cover(unit.file, unit.position)
+        change = -DELTA_T * cover * balance
         self.get_army_deployed_in(unit).change_unit_morale(unit, change)
 
     def push_from_fight(self, unit_A: Unit, unit_B: Unit, balance: float) -> None:
@@ -903,7 +818,8 @@ class Battle:
         return self.get_army_deployed_in(unit).get_communal_eff_speed(self.landscape)
 
     def get_unit_pos_desire(self, unit: Unit) -> float:
-        return self.get_unit_eff_power(unit) + 10 * unit.get_cover(self.landscape)
+        cover = self.landscape.get_mean_cover(unit.file, unit.position)
+        return self.get_unit_eff_power(unit) + 10*cover 
 
     ################
     """ PRINTING """
@@ -936,7 +852,6 @@ class Battle:
                     arrow = "<--"
                 if (unit_A, unit_B) in self.fight_pairs.two_way_pairs:
                     arrow = "<->"
-
                 string += f"  {file_1} {arrow} {file_2}  |"
             print(string[:-3])
 
@@ -957,12 +872,9 @@ class Battle:
 
 def invert_dictionary(init: dict) -> dict:
     """ Takes {x1: y1, x2: y2, x3: y2, ...} and returns {y1: {x1}, y2: {x2, x3}, ....} """
-    fin = {}
+    fin: dict[Any, Any] = {}
     for key, value in init.items():
-        if value not in fin:
-            fin[value] = {key}
-        else:
-            fin[value] |= {key}
+        fin[value] = fin[value] | {key} if (value in fin) else {key}
     return fin
 
 

@@ -1,6 +1,7 @@
 from math import inf
 
-from Battle import Landscape, Terrain, UnitType
+from Battle import UnitType
+from Geography import Landscape, Terrain
 
 
 #######################
