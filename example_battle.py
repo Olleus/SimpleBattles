@@ -1,9 +1,7 @@
-from Battle import Army, Stance
+from Data import PresetLandscapes, sword, spear, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
+from Globals import Stance
 from GraphicBattle import GraphicBattle
-import Data  # noqa
-from Data import PresetLandscapes, \
-                 sword, spear, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
-
+from Unit import Army
 
 army_1 = Army("Greek", Stance.NEUT, "DarkBlue")
 army_1.add(-2, archer).add(-1, pike).add(0, pike).add(1, pike).add(2, archer)

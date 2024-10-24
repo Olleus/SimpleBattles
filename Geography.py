@@ -1,9 +1,8 @@
-"""Contains all logic for creating and resolving battles"""
+"""Contains all elements related to terrain, landscapes, and maps the battle takes place on"""
+
 from attrs import define, Factory, field, validators
 
-
-FILE_WIDTH: float = 5          # Width of file
-MAX_HEIGHT_INTERPOL: int = 10  # Number of points used to interpolate height
+from Globals import FILE_WIDTH
 
 
 @define(frozen=False)
@@ -28,6 +27,8 @@ class Landscape:
             keys = list(inner.keys())
             if not keys == sorted(keys):
                 raise ValueError("Keys in inner dict are not sorted as expected")
+
+    MAX_HEIGHT_INTERPOL = 10  # Number of points used to interpolate height
 
     # Outer key is file, inner key upper limit to which that terrain goes to (from prior one)
     terrain_map: dict[int, dict[float, Terrain]] = field(
@@ -88,7 +89,7 @@ class Landscape:
             return self.height_map[(file, pos)]  # Don't interpolate if at an exact point
         else:
             # Standard case - interpolates using up to maximum number of points
-            return self._calc_height(file, pos, ref_points[:MAX_HEIGHT_INTERPOL])
+            return self._calc_height(file, pos, ref_points[:self.MAX_HEIGHT_INTERPOL])
 
     def _calc_height(self, file: float, pos: float, ref_points: list[tuple[float, float, float]]
                      ) -> float:
@@ -103,7 +104,7 @@ class Landscape:
         return numerator / denominator
 
     def sort_nearest_points(self, file: float, pos: float) -> list[tuple[float, float, float]]:
-        if len(self.height_map) <= MAX_HEIGHT_INTERPOL:  # No need to sort if few enough points
+        if len(self.height_map) <= self.MAX_HEIGHT_INTERPOL:  # No need to sort if few enough points
             return [(x, y, h) for (x, y), h in self.height_map.items()]
 
         return sorted([(x, y, h) for (x, y), h in self.height_map.items()],

@@ -7,11 +7,11 @@ import numpy as np
 from attrs import define, Factory, field
 from PIL import Image, ImageColor, ImageDraw
 
-import Config
-from Battle import FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, \
-                   Army, Battle, BattleOutcome, Landscape, Stance, Unit
-from Geography import DEFAULT_TERRAIN, FILE_WIDTH
-
+from Config import FRAME_COUNTER, FRAME_MS
+from Battle import Battle
+from Geography import DEFAULT_TERRAIN, Landscape
+from Globals import FILE_WIDTH, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, Stance, BattleOutcome
+from Unit import Army, Unit
 
 UNIT_FILE_WIDTH: float = 0.95
 ATTACK_LINE_OFFSET: float = 0.2
@@ -153,7 +153,7 @@ class Scene:
         self.canvas.paste(self.background, (0, 0))
 
     def fini_draw_frame(self) -> None:
-        if Config.FRAME_COUNTER:
+        if FRAME_COUNTER:
             ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
         self.frames.append(self.canvas)
@@ -290,8 +290,8 @@ class GraphicBattle(Battle):
 
     def draw_deployed_units(self, army: Army) -> None:
         for unit in army.deployed_units:
-            power = self.get_unit_eff_power(unit)
-            morale = self.get_unit_eff_morale(unit)
+            power = self.get_eff_power(unit)
+            morale = self.get_eff_morale(unit)
             flanks = (self.get_morale_from_supporting_file(unit, unit.file - 1),
                       self.get_morale_from_supporting_file(unit, unit.file + 1))
             image = self.scene.draw_unit_image(unit, army.color, flanks, power, morale)
@@ -324,7 +324,7 @@ class GraphicBattle(Battle):
 
         # loop=0 makes gif loop better on some platforms, even if not needed for others
         frames[0].save(self.gif_name+".gif", save_all=True, append_images=frames[1:],
-                       duration=Config.FRAME_MS, loop=0)
+                       duration=FRAME_MS, loop=0)
         if verbosity > 0:
             print(f"Animation saved to {self.gif_name}")
         return winner
@@ -337,7 +337,7 @@ class GraphicBattle(Battle):
         stream = BytesIO()
         # loop=0 makes gif loop better on some platforms, even if not needed for others
         frames[0].save(stream, format="GIF", save_all=True, append_images=frames[1:],
-                       duration=Config.FRAME_MS, loop=0)
+                       duration=FRAME_MS, loop=0)
         return stream
 
     def make_padding_frames(self) -> list[Image.Image]:

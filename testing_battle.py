@@ -1,10 +1,12 @@
 from math import inf
 
-from Battle import Army, Battle, Stance
-from Geography import Landscape
-from GraphicBattle import GraphicBattle
+from Battle import Battle
 from Data import smooth, even, rough, broken, ragged, forest, river, PresetLandscapes, \
                  spear, sword, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
+from Geography import Landscape
+from Globals import Stance
+from GraphicBattle import GraphicBattle
+from Unit import Army
 
 graphical = True
 
