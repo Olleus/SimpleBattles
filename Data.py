@@ -21,7 +21,7 @@ pikem = UnitType("Pike-", 270, 0.6)
 pike = UnitType("Pike", 320, 0.6)
 pikep = UnitType("Pike+", 370, 0.6)
 
-# irregm = UnitType("Irregular-", 210, -0.3, speed=1.1, att_range=1.3)
+irregm = UnitType("Irregular-", 220, -0.3, speed=1.1)
 irreg = UnitType("Irregular", 270, -0.3, speed=1.1)
 # irregp = UnitType("Irregular+", 310, -0.3, speed=1.1, att_range=1.3)
 

@@ -210,7 +210,6 @@ def test_C4():
     do_single_terrain_battle(army_1, army_2, rough)
 
 
-test_C4()
 """ Adding in cavalry units to the mix """
 
 
@@ -417,7 +416,7 @@ def test_H1():
 
 def test_H2():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.DEFN, Stance.NEUT)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEFN, Stance.AGGR)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -447,3 +446,16 @@ def test_H3():
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+def test_H4():
+    # Check all combinations of stances look reasonable
+    army_1, army_2, _ = utils_for_H_tests(Stance.AGGR, Stance.AGGR)
+    army_1.add(0, mixed).add(1, mixed).add(2, mixed)
+    army_2.add(-2, mixed).add(-1, mixed).add(0, mixed)
+
+    landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
+    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+test_H4()

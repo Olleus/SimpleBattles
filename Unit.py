@@ -152,12 +152,12 @@ class Unit:
     def is_in_front(self, unit: Self) -> bool:
         return self.file == unit.file
 
-    def is_in_range_of(self, unit: Self, force_melee: bool = False) -> bool:
-        eff_range = self.get_eff_range_against(unit, force_melee)
+    def is_in_range_of(self, unit: Self, melee: bool = False) -> bool:
+        eff_range = self.get_eff_range_against(unit, melee)
         return self.get_dist_to(unit.position) - self.EPS <= eff_range
 
-    def get_position_to_attack_target(self, unit: Self, force_melee: bool = False) -> float:
-        eff_range = self.get_eff_range_against(unit, force_melee)
+    def get_position_to_attack_target(self, unit: Self, melee: bool = False) -> float:
+        eff_range = self.get_eff_range_against(unit, melee)
         if self.position < unit.position - eff_range:    # Need to move forwards
             return unit.position - eff_range
         elif self.position > unit.position + eff_range:  # Need to move backwards
@@ -165,8 +165,8 @@ class Unit:
         else:                                            # No need to move at all
             return self.position
 
-    def get_eff_range_against(self, unit: Self, force_melee: bool = False) -> float:
-        base_range = 1 if force_melee else self.att_range
+    def get_eff_range_against(self, unit: Self, melee: bool = False) -> float:
+        base_range = 1 if melee else self.att_range
         return base_range if self.is_in_front(unit) else base_range - SIDE_RANGE_PENALTY
 
     def get_signed_distance_to_unit(self, unit: Self) -> float:
@@ -186,7 +186,7 @@ class Unit:
         return rghn*TERRAIN_POWER + self.get_height(landscape)*HEIGHT_DIF_POWER
 
     # OTHERS
-    def is_charge_range_of(self, target_pos: float) -> bool:
+    def is_in_charge_range_of(self, target_pos: float) -> bool:
         return self.get_dist_to(target_pos) <= self.speed * CHARGE_DISTANCE
 
     #####################
@@ -327,9 +327,24 @@ class Army:
     """ QUERIES """
     ###############
 
-    # Over whole army
     def get_army_reach(self) -> float:
         return 1 + max((x.att_range + 2*x.speed for x in self.deployed_units), default=3)
+
+    def get_aggressive_speed(self, unit: Unit, pos_target: float, landscape: Landscape) -> float:
+        """Own speed, reduced to backwards neighbor if pulling too far ahead"""
+        quick = unit.get_eff_speed(landscape)
+        if unit.moving_to_pos and pos_target < unit.position:
+            return quick
+        if unit.moving_to_neg and pos_target > unit.position:
+            return quick
+
+        backwards_unit = self.get_backwards_neighbor(unit)
+        if not backwards_unit:
+            return quick
+
+        slow = backwards_unit.get_eff_speed(landscape)
+        coef = 1 / (1 + abs(unit.position - backwards_unit.position))  # (0, 1]
+        return coef*quick + (1-coef)*slow
 
     def get_cohesive_speed(self, unit: Unit, pos_target: float, landscape: Landscape) -> float:
         """If moving backwards go at own speed, otherwise limit to slowest speed of lagging units"""
@@ -345,7 +360,6 @@ class Army:
         return min((x.get_eff_speed(landscape) for x in self.deployed_units
                     if x.get_dist_to(x.init_pos) <= unit.get_dist_to(unit.init_pos)))
 
-    # Over file and its neighbors
     def get_blocking_unit(self, enemy: Unit) -> Unit | None:
         """Which unit would the enemy) first encounter, if any"""
         def sort_key(enemy, unit):

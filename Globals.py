@@ -15,7 +15,7 @@ SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
-CHARGE_DISTANCE: float = 2       # Distance from enemy at which units in NEUT break formation
+CHARGE_DISTANCE: float = 1.5     # Distance (scaled by speed) where AGGR/NEUT units break formation
 HALT_POWER_GRADIENT: float = 20  # Units in DEFN stop moving when power drops at this rate
 
 # Power
@@ -35,7 +35,7 @@ FILE_VULNERABLE: float = -0.2    # Morale for having an adjacent file with a dan
 
 class Stance(IntEnum):
     """The lower number, the more aggressively the unit will move"""
-    AGGR = 0  # Units move at full speed always 
+    AGGR = 0  # Units move at own speed but avoid getting too far ahead until close enough to charge
     NEUT = 1  # Units slow down to speed of slowest laggards, but charge once close to enemy
     DEFN = 2  # Units slow down to speed of slowest laggards, but halt when advantageous
 

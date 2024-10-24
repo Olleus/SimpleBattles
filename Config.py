@@ -11,4 +11,4 @@ DELTA_T = 0.005
 FRAME_COUNTER = True
 
 """Duration of each frame in ms"""
-FRAME_MS = 30
+FRAME_MS = 60

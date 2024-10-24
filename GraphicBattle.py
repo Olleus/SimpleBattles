@@ -15,7 +15,7 @@ from Unit import Army, Unit
 
 UNIT_FILE_WIDTH: float = 0.95
 ATTACK_LINE_OFFSET: float = 0.2
-ARROWHEAD_SIZE: float = 0.2
+ARROWHEAD_SIZE: float = 0.25
 STANCE_ICON_FRAC: float = 1 / 7
 
 
