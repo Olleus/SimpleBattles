@@ -15,7 +15,6 @@ SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
 # Movement
 BASE_SPEED: float = 20           # Default unit speed
-# TODO: Use a different one for neutral and aggressive
 CHARGE_DISTANCE: float = 2       # Distance from enemy at which units in NEUT break formation
 HALT_POWER_GRADIENT: float = 20  # Units in DEFN stop moving when power drops at this rate
 

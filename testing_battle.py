@@ -2,7 +2,7 @@ from math import inf
 
 from Battle import Battle
 from Data import smooth, even, rough, broken, ragged, forest, river, PresetLandscapes, \
-                 spear, sword, pike, irreg, javelin, archer, h_horse, l_horse  # noqa
+                 spear, sword, pike, irreg, javelin, archer, mixed, h_horse, l_horse  # noqa
 from Geography import Landscape
 from Globals import Stance
 from GraphicBattle import GraphicBattle
@@ -76,6 +76,7 @@ def test_A6():
 
 
 """ Adding in ranged units to the mix """
+# TODO: Check all this balancing!
 
 
 def test_B1():
@@ -150,10 +151,70 @@ def test_B9():
     do_single_terrain_battle(army_1, army_2, broken)
 
 
-""" Adding in cavalry units to the mix """
+""" Adding in mixed units """
 
 
 def test_C1():
+    # spear wins on rough, loses on broken. Mixed unit never closes in, pushing stays at melee
+    army_1, army_2 = preamble()
+    army_1.add(0, spear)
+    army_2.add(0, mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+def test_C1b():
+    # Mixed unit does close in, pushing stays at melee
+    army_1, army_2 = preamble()
+    army_2.stance = Stance.AGGR
+    army_1.add(0, spear)
+    army_2.add(0, mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+def test_C2():
+    # mixed wins on even, archer wins on rough. Mixed unit always closes in, pushing stays at melee
+    army_1, army_2 = preamble()
+    army_1.add(0, archer)
+    army_2.add(0, mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+def test_C2b():
+    # Mixed unit does not close in, pushing stays at range
+    army_1, army_2 = preamble()
+    army_2.stance = Stance.DEFN
+    army_1.add(0, archer)
+    army_2.add(0, mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+def test_C3():
+    # Both units close in, pushing stays at melee
+    from Unit import UnitType
+    army_1, army_2 = preamble()
+    army_1.stance = Stance.AGGR
+    weak_mixed = UnitType("Mixed-", 260-20, 0.1, att_range=5, pow_range=190-20)
+    army_1.add(0, mixed)
+    army_2.add(0, weak_mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+def test_C4():
+    # Neither unit closes in, pushing stays at range
+    from Unit import UnitType
+    army_1, army_2 = preamble()
+    army_1.stance = Stance.DEFN
+    weak_mixed = UnitType("Mixed-", 260-20, 0.1, att_range=5, pow_range=190-20)
+    army_1.add(0, weak_mixed)
+    army_2.add(0, mixed)
+    do_single_terrain_battle(army_1, army_2, rough)
+
+
+test_C4()
+""" Adding in cavalry units to the mix """
+
+
+def test_D1():
     # h_horse wins on even, spear wins on rough
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
@@ -161,7 +222,7 @@ def test_C1():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_C2():
+def test_D2():
     # h_horse wins on rough, spear wins in broken
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
@@ -169,7 +230,7 @@ def test_C2():
     do_single_terrain_battle(army_1, army_2, rough)
 
 
-def test_C3():
+def test_D3():
     # Horses win on smooth, lose on even
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
@@ -177,7 +238,7 @@ def test_C3():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_C4():
+def test_D4():
     # heavy wins on even, light on broken
     army_1, army_2 = preamble()
     army_1.add(0, h_horse).add(1, h_horse)
@@ -188,7 +249,7 @@ def test_C4():
 """ Checking reserves work as intended """
 
 
-def test_D1():
+def test_E1():
     # Reserves come in at the correct time and all is displayed as expected
     army_1, army_2 = preamble()
     army_1.add(0, pike).add_reserves(pike, pike, pike)
@@ -196,7 +257,7 @@ def test_D1():
     do_single_terrain_battle(army_1, army_2, rough)
 
 
-def test_D2():
+def test_E2():
     # Side with reserves wins (in a very artificial scenario)
     army_1, army_2 = preamble()
     army_1.add(-2, sword).add(-1, sword).add(0, sword).add_reserves(h_horse)
@@ -210,7 +271,7 @@ def test_D2():
     GraphicBattle(army_1, army_2, landscape, (720, 480), "testing_out").do(verbosity=10)
 
 
-def test_D3():
+def test_E3():
     # 3+2 loses to 5+0 when deployed in the centre, but wins at the edge for spears and swords
     x = pike
     army_1, army_2 = preamble()
@@ -219,7 +280,7 @@ def test_D3():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_D4():
+def test_E4():
     # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for spears and swords, but not pikes
     x = sword
     army_1, army_2 = preamble()
@@ -231,7 +292,7 @@ def test_D4():
 """ Testing how many weak units are needed to defeat a strong one """
 
 
-def test_E1():
+def test_F1():
     # Militia power so that they just lose
     from Battle import UnitType
     militia = UnitType("Militia", 177)  # -113
@@ -242,7 +303,7 @@ def test_E1():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_E2():
+def test_F2():
     # Militia power so that they just lose
     from Battle import UnitType
     militia = UnitType("Militia", 208)  # -82
@@ -253,7 +314,7 @@ def test_E2():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_E3():
+def test_F3():
     # Militia power so that they just lose
     from Battle import UnitType
     militia = UnitType("Militia", 217)  # -103
@@ -264,7 +325,7 @@ def test_E3():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-def test_E4():
+def test_F4():
     # Militia power so that they just lose
     from Battle import UnitType
     militia = UnitType("P Militia", 221, 0.6)  # -99
@@ -278,7 +339,7 @@ def test_E4():
 """ Testing landscape """
 
 
-def test_F1():
+def test_G1():
     """Visually check that power changes smoothly with unit movement as intended"""
     army_1, army_2 = preamble()
     army_1.add(0, pike)
@@ -290,7 +351,7 @@ def test_F1():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_F2():
+def test_G2():
     # Minimum height for militia to make up for 30 power disadvantage
     from Battle import UnitType
     militia = UnitType("Militia", 260)
@@ -304,7 +365,7 @@ def test_F2():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_F3():
+def test_G3():
     # Army_1 wins with height map, just loses without it
     # Also check that contours are drawn properly
     army_1, army_2 = preamble()
@@ -332,7 +393,7 @@ def test_F3():
 """ Testing Stances"""
 
 
-def utils_for_G_tests(stance_1: Stance, stance_2: Stance):
+def utils_for_H_tests(stance_1: Stance, stance_2: Stance):
     army_1 = Army("1", stance_1, "DarkBlue")
     army_1.add(-2, archer).add(-1, sword).add(0, sword).add(1, sword).add(2, l_horse)
     army_1.add_reserves(h_horse)
@@ -347,16 +408,16 @@ def utils_for_G_tests(stance_1: Stance, stance_2: Stance):
     return army_1, army_2, ter
 
 
-def test_G1():
+def test_H1():
     # Check all combinations of NEUT and NEUT look reasonable
-    army_1, army_2, terrain = utils_for_G_tests(Stance.NEUT, Stance.NEUT)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.NEUT, Stance.NEUT)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_G2():
+def test_H2():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_G_tests(Stance.DEFN, Stance.NEUT)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEFN, Stance.NEUT)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -371,9 +432,9 @@ def test_G2():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-def test_G3():
+def test_H3():
     # Check how DEFN behaves on very steep terrain
-    army_1, army_2, terrain = utils_for_G_tests(Stance.DEFN, Stance.DEFN)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEFN, Stance.DEFN)
 
     height = {(2.2, 0): -4,
               (0.9, 0): -4,
@@ -386,6 +447,3 @@ def test_G3():
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
-
-
-test_G2()

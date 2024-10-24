@@ -290,7 +290,7 @@ class GraphicBattle(Battle):
 
     def draw_deployed_units(self, army: Army) -> None:
         for unit in army.deployed_units:
-            power = self.get_eff_power(unit)
+            power = self.get_max_eff_power(unit)
             morale = self.get_eff_morale(unit)
             flanks = (self.get_morale_from_supporting_file(unit, unit.file - 1),
                       self.get_morale_from_supporting_file(unit, unit.file + 1))

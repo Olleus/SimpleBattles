@@ -12,6 +12,7 @@ from Globals import POS_DEC_DIG, RESERVE_DIST_BEHIND, MIN_DEPLOY_DIST, SIDE_RANG
                     BASE_SPEED, CHARGE_DISTANCE, HALT_POWER_GRADIENT, \
                     TERRAIN_POWER, HEIGHT_DIF_POWER, RESERVES_POWER, RESERVES_SOFT_CAP, Stance
 
+
 @define(frozen=True)
 class UnitType:
     """The different types of units that can exist"""
@@ -64,6 +65,9 @@ class Unit:
     init_pos: float = field(init=False, default=0)
     position: float = field(init=False, default=0)
     morale: float = field(init=False, default=1)
+
+    # Status flags
+    forced_move_towards: Self | None = field(init=False, default=None)
     halted: bool = field(init=False, default=False)
     pursuing: bool = field(init=False, default=False)
 
@@ -100,6 +104,10 @@ class Unit:
     @property
     def att_range(self) -> float:
         return self.unit_type.att_range
+
+    @property
+    def pow_range(self) -> float:
+        return self.unit_type.pow_range
 
     @property
     def smoothness_desire(self) -> float:
@@ -144,13 +152,12 @@ class Unit:
     def is_in_front(self, unit: Self) -> bool:
         return self.file == unit.file
 
-    def is_in_range_of(self, unit: Self) -> bool:
-        if self.file is None or unit.file is None:
-            return False
-        return self.get_dist_to(unit.position) <= self.get_eff_range_against(unit) + self.EPS
+    def is_in_range_of(self, unit: Self, force_melee: bool = False) -> bool:
+        eff_range = self.get_eff_range_against(unit, force_melee)
+        return self.get_dist_to(unit.position) - self.EPS <= eff_range
 
-    def get_position_to_attack_target(self, unit: Self) -> float:
-        eff_range = self.get_eff_range_against(unit) - self.EPS
+    def get_position_to_attack_target(self, unit: Self, force_melee: bool = False) -> float:
+        eff_range = self.get_eff_range_against(unit, force_melee)
         if self.position < unit.position - eff_range:    # Need to move forwards
             return unit.position - eff_range
         elif self.position > unit.position + eff_range:  # Need to move backwards
@@ -158,8 +165,9 @@ class Unit:
         else:                                            # No need to move at all
             return self.position
 
-    def get_eff_range_against(self, unit: Self) -> float:
-        return self.att_range if self.is_in_front(unit) else self.att_range - SIDE_RANGE_PENALTY
+    def get_eff_range_against(self, unit: Self, force_melee: bool = False) -> float:
+        base_range = 1 if force_melee else self.att_range
+        return base_range if self.is_in_front(unit) else base_range - SIDE_RANGE_PENALTY
 
     def get_signed_distance_to_unit(self, unit: Self) -> float:
         """Positive means the other unit is ahead of it, according to this unit's direction"""
@@ -179,7 +187,7 @@ class Unit:
 
     # OTHERS
     def is_charge_range_of(self, target_pos: float) -> bool:
-        return self.get_dist_to(target_pos) < self.speed * CHARGE_DISTANCE
+        return self.get_dist_to(target_pos) <= self.speed * CHARGE_DISTANCE
 
     #####################
     """ BASIC SETTERS """
@@ -207,10 +215,10 @@ class Unit:
 
     def confirm_move(self, gradient: float, old_pos: float, old_lag: float, new_lag: float) -> None:
         """Undoes movement if it weakens the unit too much, otherwise allows it"""
-        if self.get_dist_to(self.init_pos) < MIN_DEPLOY_DIST:
+        if self.get_dist_to(self.init_pos) < MIN_DEPLOY_DIST:  # Too close to start to stop
             self.halted = False
 
-        elif old_lag < 1 <= new_lag:
+        elif old_lag < 1 <= new_lag:  # Moved ahead of friendly flankers
             self.position = old_pos
             self.halted = True
 
@@ -219,11 +227,11 @@ class Unit:
             new_lag = min(new_lag, 1-self.EPS)
             gradient *= 1/(1-new_lag) if old_lag < new_lag else 1
 
-            if gradient > HALT_POWER_GRADIENT:
+            if gradient > HALT_POWER_GRADIENT:  # Modified power desirability dropping too fast
                 self.position = old_pos
                 self.halted = True
 
-            elif self.position != old_pos:
+            elif self.position != old_pos:  # Actually moved
                 self.halted = False
     
     def move_towards(self, target: float, speed: float) -> None:
