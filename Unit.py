@@ -69,16 +69,18 @@ class Unit:
     # Status flags
     forced_move_towards: Self | None = field(init=False, default=None)
     halted: bool = field(init=False, default=False)
-    pursuing: bool = field(init=False, default=False)
 
     def __str__(self) -> str:
-        return f"{self.name:<10} | {self.power:<5.1f}P  {100*self.morale:<5.1f}M | " \
+        return f"{self.name:<10} | {self.power:<5.1f} P  {self.pow_range:<5.1f} R  " \
+               f"{100*self.morale:<5.1f} M  |  " \
                f"({self.file:>2}, {self.position: .3f})"
 
     def str_in_battle(self, landscape: Landscape, power_func: Callable[[Self], float],
                       morale_func: Callable[[Self], float]) -> str:
-        return f"{self.name:<10} | " \
-               f"{power_func(self):<5.0f}P   {100*morale_func(self):<5.1f}M | " \
+        extra = power_func(self)
+        pow_range = self.pow_range+extra if self.pow_range else 0
+        return f"{self.name:<10} | {self.power+extra:<5.1f} P  {pow_range:<5.1f} R  " \
+               f"{100*morale_func(self):<5.1f} M  |  " \
                f"({self.file:>2}, {self.position: .3f}, {self.get_height(landscape):.2f})"
 
     ##########################

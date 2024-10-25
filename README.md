@@ -1,5 +1,5 @@
 # SIMPLE BATTLES
-v0.8.1
+v0.9.0
 
 Exploring the simplest video-gamey "Battle Simulator" which requires minimal, has interesting emergent behaviour which aligns with a simplified picture of historical reality, works for as many different contexts as possible, and all the while having the fewest and most intuitive rules possible.
 

@@ -159,8 +159,8 @@ class Scene:
         self.frames.append(self.canvas)
         del self.canvas
 
-    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float],
-                        power: float, morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
+    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], pow_mods: float,
+                        morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+2), int(y+2)), color=bkgd_color)
         draw = ImageDraw.Draw(image)
@@ -172,8 +172,13 @@ class Scene:
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
         # Draw Text
-        string = f"{unit.name} {100*morale:.0f}% ({power:.0f})"
+        string = f"{unit.name} {100*morale:.0f}%" + " "*7  # Extra spaces to move it left a little
         draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
+        draw.text((x-3, 1), f"{unit.power + pow_mods:.0f} M",
+                  fill=color, font_size=self.font_size-3, anchor="ra")
+        if unit.ranged or unit.mixed:
+            draw.text((x-4, y-1), f"{unit.pow_range + pow_mods:.0f} R",
+                      fill=color, font_size=self.font_size-3, anchor="rd")
 
         # Draw Stance
         self.draw_stance_poligon(draw, unit, color)
@@ -182,11 +187,11 @@ class Scene:
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
         r = self.pixel_per_pos * STANCE_ICON_FRAC
 
-        if unit.stance is Stance.AGGR:
+        if unit.stance is Stance.AGG:
             draw.regular_polygon((4+r, 2+r, r), 3, rotation=60, fill=color, width=0)
-        elif unit.stance is Stance.NEUT:
-            draw.regular_polygon((4+r, 2+r, r), 4, fill=color, width=0)
-        elif unit.stance is Stance.DEFN:
+        elif unit.stance is Stance.BAL:
+            draw.regular_polygon((4+r, 3+r, r), 4, fill=color, width=0)
+        elif unit.stance is Stance.DEF:
             draw.regular_polygon((4+r, 4+r, r), 6, fill=color, width=0)
 
     def paste_unit_image(self, image: Image.Image, file: float | None, position: float) -> None:
@@ -247,7 +252,7 @@ class Scene:
 class GraphicBattle(Battle):
     """Same as parent, but draws a frame every turn and then saves them as a gif
         GOOD PRACTICE TO CALL GARBAGE COLLECTOR - gc.collect(2) -
-        AFTER CLASS IS DONE TO FREE UP MEMORY NEUTER"""
+        AFTER CLASS IS DONE TO FREE UP MEMORY BALER"""
     max_screen: tuple[int, int]
     gif_name: str
     scene: Scene = field(init=False)
@@ -290,11 +295,11 @@ class GraphicBattle(Battle):
 
     def draw_deployed_units(self, army: Army) -> None:
         for unit in army.deployed_units:
-            power = self.get_max_eff_power(unit)
+            power_mods = self.get_power_mods(unit)
             morale = self.get_eff_morale(unit)
             flanks = (self.get_morale_from_supporting_file(unit, unit.file - 1),
                       self.get_morale_from_supporting_file(unit, unit.file + 1))
-            image = self.scene.draw_unit_image(unit, army.color, flanks, power, morale)
+            image = self.scene.draw_unit_image(unit, army.color, flanks, power_mods, morale)
             self.scene.paste_unit_image(image, unit.file, unit.position)
 
     def draw_removed_units(self, army: Army) -> None:
@@ -305,7 +310,7 @@ class GraphicBattle(Battle):
                 present.add(unit.file)
 
                 image = self.scene.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY),
-                                                   unit.power, unit.morale)
+                                                   0, unit.morale)
                 position = unit.init_pos - 0.01  # offset needed because of rouning errors
                 position += 2 if position > 0 else -2
                 self.scene.paste_unit_image(image, unit.file, position)
@@ -313,7 +318,7 @@ class GraphicBattle(Battle):
     def draw_reserve_units(self, army: Army) -> None:
         for slot, unit in enumerate(reversed(army.reserves)):
             image = self.scene.draw_unit_image(unit, army.color, (FILE_EMPTY, FILE_EMPTY),
-                                               unit.power, unit.morale, bkgd_color="White")
+                                               0, unit.morale, bkgd_color="White")
             position = unit.init_pos
             position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
             self.scene.paste_unit_image(image, None, position)

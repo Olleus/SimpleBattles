@@ -9,42 +9,42 @@ from Unit import UnitType
 #######################
 
 # Melee
-swordm = UnitType("Sword-", 240, 0)
 sword = UnitType("Sword", 290, 0)
-swordp = UnitType("Sword+", 340, 0)
-
-spearm = UnitType("Spear-", 250, 0.2)
 spear = UnitType("Spear", 300, 0.2)
-spearp = UnitType("Spear+", 350, 0.2)
-
-pikem = UnitType("Pike-", 270, 0.6)
 pike = UnitType("Pike", 320, 0.6)
-pikep = UnitType("Pike+", 370, 0.6)
-
-irregm = UnitType("Irregular-", 220, -0.3, speed=1.1)
-irreg = UnitType("Irregular", 270, -0.3, speed=1.1)
-# irregp = UnitType("Irregular+", 310, -0.3, speed=1.1, att_range=1.3)
+irreg = UnitType("Irregular", 260, -0.4, speed=1.1)
 
 # Ranged
-# javelinm = UnitType("Javelin-", 190, -0.5, speed=1.2, att_range=2)
-javelin = UnitType("Javelin", 230, -0.5, speed=1.2, att_range=2, pow_range=270)
-# javelinp = UnitType("Javelin+", 290, -0.5, speed=1.2, att_range=2)
-
-# archerm = UnitType("Archer-", 170, -0.3, att_range=5)
-archer = UnitType("Archer", 200, -0.3, att_range=5, pow_range=250)
-# archerp = UnitType("Archer+", 270, -0.3, att_range=5)
-
-mixed = UnitType("Mixed Inf", 260, 0.1, att_range=5, pow_range=190)
+javelin = UnitType("Javelin", 230, -0.5, speed=1.2, att_range=2, pow_range=300)
+archer = UnitType("Archer", 210, -0.3, att_range=5, pow_range=270)
+mixed = UnitType("Mixed Inf", 260, 0.1, att_range=5, pow_range=200)
 
 # Cavalry
-h_horsem = UnitType("Shock Cav-", 240, -0.2, speed=2)
 h_horse = UnitType("Shock Cav", 290, -0.2, speed=2)
-h_horsep = UnitType("Shock Cav+", 340, -0.2, speed=2)
-
-# l_horsem = UnitType("Light Cav-", 185, -0.6, speed=2.3, att_range=3)
 l_horse = UnitType("Light Cav", 240, -0.6, speed=2.3, att_range=3, pow_range=220)
-# l_horsep = UnitType("Light Cav+", 285, -0.6, speed=2.3, att_range=3)
 
+
+# Variants
+swordm = UnitType("Sword-", 240, 0)
+swordp = UnitType("Sword+", 340, 0)
+spearm = UnitType("Spear-", 250, 0.2)
+spearp = UnitType("Spear+", 350, 0.2)
+pikem = UnitType("Pike-", 270, 0.6)
+pikep = UnitType("Pike+", 370, 0.6)
+irregm = UnitType("Irregular-", 210, -0.4, speed=1.1)
+irregp = UnitType("Irregular+", 310, -0.4, speed=1.1)
+
+javelinm = UnitType("Javelin-", 180, -0.5, speed=1.2, att_range=2, pow_range=250)
+javelinp = UnitType("Javelin+", 280, -0.5, speed=1.2, att_range=2, pow_range=350)
+archerm = UnitType("Archer-", 160, -0.3, att_range=5, pow_range=220)
+archerp = UnitType("Archer+", 260, -0.3, att_range=5, pow_range=320)
+mixedm = UnitType("Mixed Inf-", 210, 0.1, att_range=5, pow_range=150)
+mixedp = UnitType("Mixed Inf+", 310, 0.1, att_range=5, pow_range=250)
+
+h_horsem = UnitType("Shock Cav-", 240, -0.2, speed=2)
+h_horsep = UnitType("Shock Cav+", 340, -0.2, speed=2)
+l_horsem = UnitType("Light Cav-", 190, -0.6, speed=2.3, att_range=3, pow_range=170)
+l_horsep = UnitType("Light Cav+", 290, -0.6, speed=2.3, att_range=3, pow_range=270)
 
 #####################
 """    TERRAIN    """
@@ -104,7 +104,7 @@ class PresetLandscapes:
         terrain = {-3: {-2: forest, 2: even, inf: forest},
                    -2: {-3: rough, 3: smooth, inf: even},
                    -1: {-3: smooth, -1.5: even, 1.5: smooth, 4: even, inf: rough},
-                   0: {-4: even, -2: even, 2: smooth, 4: even, inf: rough},
+                   0: {-4: even, -2: rough, 2: even, 4: smooth, inf: even},
                    1: {-4: smooth, -2.5: even, 2: smooth, 4: even, inf: smooth},
                    2: {-4.5: rough, -3: even, 2.5: rough, 4.5: smooth, inf: rough},
                    3: {-3: even, 3: rough, inf: forest}}
