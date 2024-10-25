@@ -8,7 +8,7 @@ from Globals import Stance
 from GraphicBattle import GraphicBattle
 from Unit import Army
 
-graphical = False
+graphical = True
 
 
 def preamble():
@@ -273,10 +273,10 @@ def test_E3():
 
 
 def test_E4():
-    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for spears and swords, but not pikes
-    x = spear
+    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for melee units, but not mixed
+    x = pike
     army_1, army_2 = preamble()
-    army_1.add(1, x).add(-1, x).add(0, x).add_reserves(x, x)
+    army_1.add(-2, x).add(-1, x).add(-1, x).add(0, x).add(1, x).add(2, x)
     army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
     do_single_terrain_battle(army_1, army_2, even)
 
@@ -449,6 +449,3 @@ def test_H4():
 
     landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
-
-
-test_H4()

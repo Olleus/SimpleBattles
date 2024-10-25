@@ -34,8 +34,9 @@ class UnitType:
             raise ValueError("Unit with an attack range must have ranged power")
 
     def __repr__(self) -> str:
-        return f"{self.name: <10}  |  P={self.power:.0f} ({self.att_range:.0f}),  "\
-               f"R={self.rigidity:.2f},  S={self.speed:.0f}"
+        return f"{self.name: <10}  |  {self.power:.0f} P  "\
+               f"{self.pow_range:.0f} ({self.att_range:.0f}) R  |  "\
+               f"{self.rigidity:.2f} Rgd,  {self.speed:.0f} S"
 
     @property
     def smoothness_desire(self) -> float:
@@ -322,7 +323,7 @@ class Army:
         """reserve_power ~= RESERVES_POWER*total when total far below soft cap, with a drop of:
         ~30% when total = soft_cap, 50% when total ~= 2.5*soft_cap
         """
-        total = sum(unit.power for unit in self.reserves)
+        total = sum(max(unit.power, unit.pow_range) for unit in self.reserves)
         return RESERVES_POWER * RESERVES_SOFT_CAP * log(1 + total/RESERVES_SOFT_CAP)
 
     ###############
