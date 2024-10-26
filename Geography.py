@@ -1,4 +1,5 @@
 """Contains all elements related to terrain, landscapes, and maps the battle takes place on"""
+from typing import Callable
 
 from attrs import define, Factory, field, validators
 
@@ -45,33 +46,29 @@ class Landscape:
         return DEFAULT_TERRAIN
 
     def get_mean_cover(self, file: int, pos: float) -> float:
-        file_map = self.terrain_map.get(file, {})
-        min_pos, max_pos = pos-0.5, pos+0.5
-        cover = 0.0
-
-        for pos_bound, terrain in file_map.items():
-            if max_pos <= pos_bound:
-                cover += terrain.cover * (max_pos - min_pos)  # Remaining interval width
-                break
-            elif min_pos <= pos_bound:
-                cover += terrain.cover * (pos_bound - min_pos)  # Overlap interval width
-                min_pos = pos_bound
-        return cover
+        return self.accumulate_over_terrain(file, pos, lambda terrain: terrain.cover)
 
     def get_mean_scaled_roughness(self, file: int, pos: float, smooth_desire: float) -> float:
+
+        def func(terrain: Terrain, smooth_desire: float) -> float:
+            effect = -terrain.roughness * smooth_desire
+            return min(effect, 0) if terrain.penalty else effect
+
+        return self.accumulate_over_terrain(file, pos, lambda terrain: func(terrain, smooth_desire))
+
+    def accumulate_over_terrain(self, file: int, pos: float, method: Callable[[Terrain], float]
+                                ) -> float:
         file_map = self.terrain_map.get(file, {})
         min_pos, max_pos = pos-0.5, pos+0.5
         roughness = 0.0
         for pos_bound, terrain in file_map.items():
 
             if max_pos <= pos_bound:
-                change = -terrain.roughness * smooth_desire * (max_pos - min_pos)
-                roughness += 0 if (terrain.penalty and change > 0) else change
+                roughness += method(terrain) * (max_pos - min_pos)
                 break
 
             elif min_pos <= pos_bound:
-                change = -terrain.roughness * smooth_desire * (pos_bound - min_pos)
-                roughness += 0 if (terrain.penalty and change > 0) else change
+                roughness += method(terrain) * (pos_bound - min_pos)
                 min_pos = pos_bound
 
         return roughness

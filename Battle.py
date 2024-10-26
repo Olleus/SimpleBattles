@@ -130,7 +130,8 @@ class Battle:
         return FightPairs(self.army_1, self.army_2)
 
     def __attrs_post_init__(self) -> None:
-        init_pos = max(self.army_1.get_army_reach(), self.army_2.get_army_reach(), 5)
+        """Armies positioned symmetrically, with the total gap being the sum of their reach"""
+        init_pos = (self.army_1.army_reach + self.army_2.army_reach) / 2
         self.army_1.set_up(-init_pos)
         self.army_2.set_up(init_pos)
 
@@ -402,7 +403,7 @@ class Battle:
         coef = min(1, (advantage - 1) / (PUSH_RESISTANCE + loser.rigidity))
         dist = min(winner.get_eff_speed(self.landscape), loser.get_eff_speed(self.landscape) * coef)
         dist *= BASE_SPEED * DELTA_T * (1 if winner.moving_to_pos else -1)
-        loser.move_by(dist)
+        loser.position += dist
 
         self._follow_push_by_winner(winner, loser, dist)
 
@@ -415,7 +416,7 @@ class Battle:
         loser_in_range = loser.is_in_range_of(winner, melee=loser_force_melee)
 
         if not winner_in_range or not loser_in_range:
-            winner.move_by(dist)
+            winner.position += dist
 
     def move_post_fight_one_way(self, unit_A: Unit, unit_B: Unit) -> None:
         self.call_neighbors_forwards(unit_B, unit_A)
