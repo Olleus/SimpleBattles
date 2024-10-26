@@ -12,18 +12,6 @@ army_2 = Army("Red", Stance.BAL, "DarkRed")
 army_2.add(-2, archerm).add(-2, archerm).add(-1, mixed).add(0, mixed).add(1, mixed).add(2, archerm)
 army_2.add_reserves(irregm, irregm, irregm)
 
-landscape = PresetLandscapes.slopping()
+landscape = PresetLandscapes.sloping()
 
 GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_out").do(10)
-
-# from Data import line, light, grenadier, cuirassier, chasseur, cannon  # noqa
-
-# army_1 = Army("Blue", Stance.BAL, "DarkBlue")
-# army_1.add(-2, light).add(-1, light).add(0, line).add(1, light).add(2, line)
-
-# army_2 = Army("Red", Stance.BAL, "DarkRed")
-# army_2.add(-2, line).add(-1, cannon).add(0, line).add(1, cannon).add(2, line)
-
-
-# landscape = PresetLandscapes.even()
-# GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_out").do(10)

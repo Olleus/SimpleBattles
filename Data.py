@@ -160,7 +160,7 @@ class PresetLandscapes:
         return Landscape(terrain, height)
 
     @staticmethod
-    def slopping() -> Landscape:
+    def sloping() -> Landscape:
         terrain = {-3: {-2: broken, 2: even, inf: smooth},
                    -2: {-3: rough, 3: smooth, inf: even},
                    -1: {-3: smooth, -1.5: even, 1.5: smooth, 4: even, inf: rough},
@@ -247,21 +247,17 @@ class PresetLandscapes:
 
 
 # Collections for easy referencing, especially to build interfact in pyscript
-
 unit_dict = {x.name: x for x in globals().values() if isinstance(x, UnitType)}
 terrain_dict = {x.name: x for x in globals().values() if isinstance(x, Terrain)}
 landscape_dict = {k: v for k, v in PresetLandscapes.__dict__.items()
                   if isinstance(v, staticmethod) and v.__annotations__["return"] is Landscape}
 
-
 # 18th Century roster, deliberately not included in the above
-# Not fully balanced yet
-
-line = UnitType("Line Inf.", 600, 0.2, att_range=7, pow_range=450)
-light = UnitType("Light Inf.", 500, -0.3, att_range=9, pow_range=550)
-grenadier = UnitType("Grenadier", 620, 0.4, att_range=6, pow_range=350)
+line = UnitType("Line Inf", 600, 0.2, att_range=7, pow_range=450)
+light = UnitType("Light Inf", 500, -0.3, att_range=9, pow_range=550)
+grenadier = UnitType("Shock Inf", 620, 0.4, att_range=6, pow_range=350)
 
 cuirassier = UnitType("Shock Cav", 640, -0.2, speed=1.8)
-chasseur = UnitType("Light Cav", 550, -0.3, speed=2, att_range=4, pow_range=400)
+chasseur = UnitType("Light Cav", 550, -0.3, speed=2, att_range=4, pow_range=420)
 
-cannon = UnitType("Cannon", 300, -0.5, speed=0.8, att_range=12, pow_range=450)
+cannon = UnitType("Cannon", 300, -0.5, speed=0.8, att_range=16, pow_range=450)

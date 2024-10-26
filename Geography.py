@@ -49,29 +49,24 @@ class Landscape:
         return self.accumulate_over_terrain(file, pos, lambda terrain: terrain.cover)
 
     def get_mean_scaled_roughness(self, file: int, pos: float, smooth_desire: float) -> float:
-
         def func(terrain: Terrain, smooth_desire: float) -> float:
             effect = -terrain.roughness * smooth_desire
             return min(effect, 0) if terrain.penalty else effect
-
         return self.accumulate_over_terrain(file, pos, lambda terrain: func(terrain, smooth_desire))
 
     def accumulate_over_terrain(self, file: int, pos: float, method: Callable[[Terrain], float]
                                 ) -> float:
-        file_map = self.terrain_map.get(file, {})
         min_pos, max_pos = pos-0.5, pos+0.5
-        roughness = 0.0
-        for pos_bound, terrain in file_map.items():
+        total = 0.0
 
+        for pos_bound, terrain in self.terrain_map.get(file, {}).items():
             if max_pos <= pos_bound:
-                roughness += method(terrain) * (max_pos - min_pos)
+                total += method(terrain) * (max_pos - min_pos)
                 break
-
             elif min_pos <= pos_bound:
-                roughness += method(terrain) * (pos_bound - min_pos)
+                total += method(terrain) * (pos_bound - min_pos)
                 min_pos = pos_bound
-
-        return roughness
+        return total
 
     # File is a float rather than int here for drawing purposes
     def get_height(self, file: float, pos: float) -> float:

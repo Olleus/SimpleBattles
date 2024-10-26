@@ -157,7 +157,6 @@ class Scene:
             ImageDraw.Draw(self.canvas).text((5, 5), f" {len(self.frames)}",
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
         self.frames.append(self.canvas)
-        del self.canvas
 
     def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], pow_mods: float,
                         morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
@@ -186,7 +185,6 @@ class Scene:
 
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
         r = self.pixel_per_pos * STANCE_ICON_FRAC
-
         if unit.stance is Stance.AGG:
             draw.regular_polygon((4+r, 2+r, r), 3, rotation=60, fill=color, width=0)
         elif unit.stance is Stance.BAL:
@@ -276,12 +274,10 @@ class GraphicBattle(Battle):
     def draw_frame(self) -> None:
         self.scene.init_draw_frame()
 
-        self.draw_deployed_units(self.army_1)
-        self.draw_deployed_units(self.army_2)
-        self.draw_removed_units(self.army_1)
-        self.draw_removed_units(self.army_2)
-        self.draw_reserve_units(self.army_1)
-        self.draw_reserve_units(self.army_2)
+        for army in (self.army_1, self.army_2):
+            self.draw_deployed_units(army)
+            self.draw_removed_units(army)
+            self.draw_reserve_units(army)
 
         for unit_A, unit_B in self.fight_pairs.two_way_pairs:
             color = self.scene.get_blended_color(self.army_1.color, self.army_2.color)
@@ -308,22 +304,22 @@ class GraphicBattle(Battle):
         for unit in reversed(army.removed):
             if unit.file not in present:
                 present.add(unit.file)
-
-                image = self.scene.draw_unit_image(unit, "Gray", (FILE_EMPTY, FILE_EMPTY),
-                                                   0, unit.morale)
+                image = self.scene.draw_unit_image(
+                    unit, "Gray", (FILE_EMPTY, FILE_EMPTY), 0, unit.morale)
                 position = unit.init_pos - 0.01  # offset needed because of rouning errors
                 position += 2 if position > 0 else -2
                 self.scene.paste_unit_image(image, unit.file, position)
 
     def draw_reserve_units(self, army: Army) -> None:
         for slot, unit in enumerate(reversed(army.reserves)):
-            image = self.scene.draw_unit_image(unit, army.color, (FILE_EMPTY, FILE_EMPTY),
-                                               0, unit.morale, bkgd_color="White")
+            image = self.scene.draw_unit_image(
+                unit, army.color, (FILE_EMPTY, FILE_EMPTY), 0, unit.morale, bkgd_color="White")
             position = unit.init_pos
             position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
             self.scene.paste_unit_image(image, None, position)
 
     def do(self, verbosity: int) -> BattleOutcome:
+        self.draw_frame()
         winner = super().do(verbosity)
         frames = self.make_padding_frames()
 
@@ -336,6 +332,7 @@ class GraphicBattle(Battle):
 
     def do_to_buffer(self) -> BytesIO:
         # Version of above useful for integrating into pyscript and displaying in browser
+        self.draw_frame()
         super().do(0)
         frames = self.make_padding_frames()
 

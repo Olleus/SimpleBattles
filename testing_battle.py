@@ -409,7 +409,7 @@ def test_H1():
 
 def test_H2():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.DEF)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.AGG, Stance.BAL)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -451,4 +451,4 @@ def test_H4():
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
-test_H4()
+test_H2()
