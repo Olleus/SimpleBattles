@@ -402,14 +402,14 @@ def utils_for_H_tests(stance_1: Stance, stance_2: Stance):
 
 def test_H1():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.AGG, Stance.BAL)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.DEF)
     landscape = Landscape(terrain, {})
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
 
 
 def test_H2():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.AGG, Stance.BAL)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.DEF)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -443,9 +443,12 @@ def test_H3():
 
 def test_H4():
     # Check all combinations of stances look reasonable
-    army_1, army_2, _ = utils_for_H_tests(Stance.BAL, Stance.AGG)
+    army_1, army_2, _ = utils_for_H_tests(Stance.DEF, Stance.DEF)
     army_1.add(0, mixed).add(1, mixed).add(2, mixed)
     army_2.add(-2, mixed).add(-1, mixed).add(0, mixed)
 
     landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+
+
+test_H4()

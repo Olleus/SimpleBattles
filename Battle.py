@@ -6,7 +6,7 @@ from attrs import define, Factory, field
 
 from Config import DELTA_T
 from Geography import Landscape
-from Globals import RESERVE_DIST_BEHIND, BASE_SPEED, PUSH_RESISTANCE, \
+from Globals import RESERVE_DIST_BEHIND, BASE_SPEED, PUSH_RESISTANCE, HALT_POWER_GRADIENT, \
                     POWER_SCALE, LOW_MORALE_POWER, PURSUE_MORALE, \
                     FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, Stance, BattleOutcome
 from Unit import Army, Unit
@@ -497,17 +497,20 @@ class Battle:
 
         unit.move_towards(target, speed)
         if unit.position == old_pos:
-            return
+            return  # Prevents later division by 0 and, if not moving anyway, rest is pointless
 
         new_desire = self.get_unit_pos_desire(unit)
         new_lag = unit.get_dist_to(backwards_unit.position) if backwards_unit else 0
 
-        power_grad = (old_desire - new_desire) / unit.get_dist_to(old_pos)
-        unit.confirm_move(power_grad, old_pos, old_lag, new_lag)
+        gradient = (old_desire - new_desire) / unit.get_dist_to(old_pos)
+        # Add a desire (up to 1/2 of required) to stop in middle of battlefield rather than edge
+        gradient += (0.5 - abs(unit.position)/abs(unit.init_pos)) * HALT_POWER_GRADIENT
+
+        unit.confirm_move(gradient, old_pos, old_lag, new_lag)
 
     def get_unit_pos_desire(self, unit: Unit) -> float:
         cover = self.landscape.get_mean_cover(unit.file, unit.position)
-        return self.get_max_eff_power(unit) + 10*cover 
+        return self.get_max_eff_power(unit) + 10*cover
 
     ################
     """ PRINTING """

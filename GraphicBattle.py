@@ -17,6 +17,7 @@ UNIT_FILE_WIDTH: float = 0.95
 ATTACK_LINE_OFFSET: float = 0.2
 ARROWHEAD_SIZE: float = 0.25
 STANCE_ICON_FRAC: float = 1 / 7
+FONT_SIZE_FRAC: float = 1 / 2.2
 
 
 @define
@@ -55,8 +56,7 @@ class Scene:
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
-        self.font_size = int(self.pixel_per_pos / 2.2)  # Allows text to fit nicely in unit rect
-
+        self.font_size = int(self.pixel_per_pos * FONT_SIZE_FRAC)
         self.draw_background()
 
     # GETTERS
@@ -112,7 +112,7 @@ class Scene:
     def plot_contour_graph(self) -> BytesIO:
         X, Y, h = self.make_vectors_for_contour_graph()
         levels = np.arange(np.min(h), np.max(h), 1)
-        if len(levels) <= 3:
+        if len(levels) <= 4:
             levels = np.arange(np.min(h), np.max(h), 0.5)
 
         fig, ax = plt.subplots(frameon=False)
@@ -177,7 +177,7 @@ class Scene:
         draw.text((x-3, 1), f"{unit.power + pow_mods:.0f} M",
                   fill=color, font_size=self.font_size-3, anchor="ra")
         if unit.ranged or unit.mixed:
-            draw.text((x-4, y-1), f"{unit.pow_range + pow_mods:.0f} R",
+            draw.text((x-4, y+1), f"{unit.pow_range + pow_mods:.0f} R",
                       fill=color, font_size=self.font_size-3, anchor="rd")
 
         # Draw Stance

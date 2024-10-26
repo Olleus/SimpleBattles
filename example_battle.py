@@ -3,12 +3,27 @@ from Globals import Stance
 from GraphicBattle import GraphicBattle
 from Unit import Army
 
-army_1 = Army("Greek", Stance.BAL, "DarkBlue")
-army_1.add(-2, archer).add(-1, archer).add(0, spear).add(1, spear).add(2, h_horse).add(3, h_horse)
+from Data import spearp, archerm, irregm
 
-army_2 = Army("Persia", Stance.DEF, "DarkRed")
-army_2.add(-2, h_horse).add(-1, mixed).add(0, mixed).add(1, mixed).add(2, javelin).add(-3, l_horse)
+army_1 = Army("Blue", Stance.BAL, "DarkBlue")
+army_1.add(-2, spearp).add(-1, spear).add(0, spear).add(1, spear).add(2, spearp)
 
-landscape = PresetLandscapes.rolling_green()
+army_2 = Army("Red", Stance.BAL, "DarkRed")
+army_2.add(-2, archerm).add(-2, archerm).add(-1, mixed).add(0, mixed).add(1, mixed).add(2, archerm)
+army_2.add_reserves(irregm, irregm, irregm)
+
+landscape = PresetLandscapes.slopping()
 
 GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_out").do(10)
+
+# from Data import line, light, grenadier, cuirassier, chasseur, cannon  # noqa
+
+# army_1 = Army("Blue", Stance.BAL, "DarkBlue")
+# army_1.add(-2, light).add(-1, light).add(0, line).add(1, light).add(2, line)
+
+# army_2 = Army("Red", Stance.BAL, "DarkRed")
+# army_2.add(-2, line).add(-1, cannon).add(0, line).add(1, cannon).add(2, line)
+
+
+# landscape = PresetLandscapes.even()
+# GraphicBattle(army_1, army_2, landscape, (1080, 720), "example_out").do(10)
