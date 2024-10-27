@@ -38,14 +38,11 @@ class UnitType:
                f"{self.rigidity:.2f} Rgd,  {self.speed:.0f} S"
 
     @property
-    def smoothness_desire(self) -> float: return self.rigidity + (self.speed - 1)
-
+    def smooth_desire(self) -> float: return self.rigidity + (self.speed - 1)
     @property
     def melee(self) -> bool: return self.att_range == 1
-
     @property
     def mixed(self) -> bool: return self.att_range > 1 and self.power > self.pow_range
-
     @property
     def ranged(self) -> bool: return self.att_range > 1 and self.power <= self.pow_range
 
@@ -59,25 +56,24 @@ class Unit:
     stance: Stance
     file: int
     init_pos: float = field(init=False, default=0)
+    landscape: Landscape | None = field(init=False)
+
+    # Vary continuously
     _position: float = field(init=False, default=0)
     morale: float = field(init=False, default=1)
-
-    # Status flags
     forced_move_towards: Self | None = field(init=False, default=None)
     halted: bool = field(init=False, default=False)
 
     def __str__(self) -> str:
-        return f"{self.name:<10} | {self.power:<5.1f} P  {self.pow_range:<5.1f} R  " \
-               f"{100*self.morale:<5.1f} M  |  " \
-               f"({self.file:>2}, {self.position: .3f})"
+        return self.str_in_battle(lambda unit: 0, lambda unit: unit.morale)
 
-    def str_in_battle(self, landscape: Landscape, power_func: Callable[[Self], float],
-                      morale_func: Callable[[Self], float]) -> str:
+    def str_in_battle(
+            self, power_func: Callable[[Self], float], morale_func: Callable[[Self], float]) -> str:
         extra = power_func(self)
         pow_range = self.pow_range+extra if self.pow_range else 0
         return f"{self.name:<10} | {self.power+extra:<5.1f} P  {pow_range:<5.1f} R  " \
                f"{100*morale_func(self):<5.1f} M  |  " \
-               f"({self.file:>2}, {self.position: .3f}, {self.get_height(landscape):.2f})"
+               f"({self.file:>2}, {self.position: .3f}, {self.height:.2f})"
 
     ##########################
     """ ATTRIBUTES & UTILS """
@@ -85,46 +81,32 @@ class Unit:
 
     @property
     def name(self) -> str: return self.unit_type.name
-
     @property
     def power(self) -> float: return self.unit_type.power
-
     @property
     def speed(self) -> float: return self.unit_type.speed
-
     @property
     def rigidity(self) -> float: return self.unit_type.rigidity
-
     @property
     def att_range(self) -> float: return self.unit_type.att_range
-
     @property
     def pow_range(self) -> float: return self.unit_type.pow_range
-
     @property
-    def smoothness_desire(self) -> float: return self.unit_type.smoothness_desire
-
+    def smooth_desire(self) -> float: return self.unit_type.smooth_desire
     @property
     def melee(self) -> bool: return self.unit_type.melee
-
     @property
     def mixed(self) -> bool: return self.unit_type.mixed
-
     @property
     def ranged(self) -> bool: return self.unit_type.ranged
-
     @property
     def moving_to_pos(self) -> bool: return self.init_pos < 0
-
     @property
     def moving_to_neg(self) -> bool: return self.init_pos > 0
-
     @property
     def at_home(self) -> bool: return self.position == self.init_pos
-
     @property
     def at_end(self) -> bool: return self.position == -self.init_pos
-
     @property
     def position(self) -> float: return self._position
 
@@ -133,6 +115,27 @@ class Unit:
         position = max(-abs(self.init_pos), min(value, abs(self.init_pos)))
         self._position = round(position, POS_DEC_DIG)
 
+    @property
+    def height(self) -> float:
+        return self.landscape.get_height(self.file, self.position) if self.landscape else 0
+
+    @property
+    def cover_from_terrain(self) -> float:
+        return self.landscape.get_mean_cover(self.file, self.position) if self.landscape else 0
+
+    @property
+    def power_from_terrain(self) -> float:
+        if not self.landscape:
+            return 0
+        rgh = self.landscape.get_mean_scaled_roughness(self.file, self.position, self.smooth_desire)
+        return rgh*TERRAIN_POWER + self.height*HEIGHT_DIF_POWER
+
+    @property
+    def eff_speed(self) -> float:
+        if not self.landscape:
+            return self.speed
+        return self.speed * (1 - self.landscape.get_terrain(self.file, self.position).roughness)
+
     def get_dist_to(self, position: float) -> float:
         return abs(self.position - position)
 
@@ -140,7 +143,6 @@ class Unit:
     """ QUERIES """
     ###############
 
-    # LOCATION
     def is_in_front(self, unit: Self) -> bool:
         return self.file == unit.file
 
@@ -153,8 +155,7 @@ class Unit:
 
     def get_signed_distance_to_unit(self, unit: Self) -> float:
         """Positive means the other unit is ahead of it, according to this unit's direction"""
-        dist = unit.position - self.position
-        return dist if self.moving_to_pos else -dist
+        return unit.position-self.position if self.moving_to_pos else self.position-unit.position
 
     def get_eff_range_against(self, unit: Self, melee: bool = False) -> float:
         base_range = 1 if melee else self.att_range
@@ -169,24 +170,14 @@ class Unit:
         else:                                            # No need to move at all
             return self.position
 
-    # LANDSCAPE
-    def get_height(self, landscape: Landscape) -> float:
-        return landscape.get_height(self.file, self.position)
-
-    def get_power_from_terrain(self, landscape: Landscape) -> float:
-        rghn = landscape.get_mean_scaled_roughness(self.file, self.position, self.smoothness_desire)
-        return rghn*TERRAIN_POWER + self.get_height(landscape)*HEIGHT_DIF_POWER
-
-    def get_eff_speed(self, landscape: Landscape) -> float:
-        return self.speed * (1 - landscape.get_terrain(self.file, self.position).roughness)
-
     #########################
     """ ALTERING POSITION """
     #########################
 
-    def set_up(self, init_pos: float) -> None:
+    def set_up(self, init_pos: float, landscape: Landscape) -> None:
         self.init_pos = init_pos
         self.position = init_pos + self.EPS*(2 if self.moving_to_pos else -2)
+        self.landscape = landscape
     
     def move_towards(self, target: float, speed: float) -> None:
         if self.position < target:
@@ -214,22 +205,22 @@ class Unit:
         """Undoes movement if it weakens the unit too much, otherwise allows it"""
         if self.get_dist_to(self.init_pos) < MIN_DEPLOY_DIST:  # Too close to start to stop
             self.halted = False
+            return
 
-        elif old_lag < 1 <= new_lag:  # Moved ahead of friendly flankers
+        if old_lag < 1 <= new_lag:  # Moved ahead of friendly flankers
             self.position = old_pos
             self.halted = True
+            return
 
-        else:
-            # Increases percieved power gradient if moving away from supporting units
-            new_lag = max(0, min(new_lag, 0.99))  # Prevent /0 or sign errors
-            gradient *= 1/(1-new_lag) if old_lag < new_lag else 1
+        # Increases percieved power gradient if moving away from supporting units
+        new_lag = max(0, min(new_lag, 0.99))  # Prevent /0 or sign errors
+        gradient *= 1/(1-new_lag) if old_lag < new_lag else 1
 
-            if gradient > HALT_POWER_GRADIENT:  # Modified power desirability dropping too fast
-                self.position = old_pos
-                self.halted = True
-
-            elif self.position != old_pos:  # Actually moved
-                self.halted = False
+        if gradient > HALT_POWER_GRADIENT:  # Modified power desirability dropping too fast
+            self.position = old_pos
+            self.halted = True
+        elif self.position != old_pos:  # Actually moved
+            self.halted = False
 
 
 @define(eq=False)
@@ -244,24 +235,13 @@ class Army:
     removed: list[Unit] = field(init=False, default=Factory(list))
 
     def __str__(self) -> str:
-        string = f"{self.name} in {self.stance.name}"
-        for file, unit in self.file_units.items():
-            string += f"\n    {file:>2}: {unit}"
-        if self.reserves:
-            string += "\n    Reserves:"
-            for unit in self.reserves:
-                string += f"\n        {unit}"
-        if self.removed:
-            string += "\n    Removed: "
-            for unit in self.removed:
-                string += f"{unit.name}    "
-        return string
+        return self.str_in_battle(lambda unit: 0, lambda unit: unit.morale)
 
-    def str_in_battle(self, landscape: Landscape, power_func: Callable[[Unit], float],
-                      morale_func: Callable[[Unit], float]) -> str:
+    def str_in_battle(
+            self, power_func: Callable[[Unit], float], morale_func: Callable[[Unit], float]) -> str:
         string = f"{self.name} in {self.stance.name}"
         for file, unit in self.file_units.items():
-            string += f"\n    {file:>2}: {unit.str_in_battle(landscape, power_func, morale_func)}"
+            string += f"\n    {file:>2}: {unit.str_in_battle(power_func, morale_func)}"
         if self.reserves:
             string += "\n    Reserves:"
             for unit in self.reserves:
@@ -275,9 +255,9 @@ class Army:
     ##################
     """ ATTRIBUTES """
     ##################
+
     @property
     def deployed_units(self) -> Iterable[Unit]: return self.file_units.values()
-
     @property
     def defeated(self) -> bool: return not self.file_units
 
@@ -305,9 +285,9 @@ class Army:
         return self.is_file_active(file+1 if file < 0 else file-1)
 
     # SPEED
-    def get_aggressive_speed(self, unit: Unit, pos_target: float, landscape: Landscape) -> float:
+    def get_aggressive_speed(self, unit: Unit, pos_target) -> float:
         """Own speed, reduced to backwards neighbor if pulling too far ahead"""
-        quick = unit.get_eff_speed(landscape)
+        quick = unit.eff_speed
         if unit.moving_to_pos and pos_target < unit.position:
             return quick
         if unit.moving_to_neg and pos_target > unit.position:
@@ -317,22 +297,22 @@ class Army:
         if not backwards_unit:
             return quick
 
-        slow = backwards_unit.get_eff_speed(landscape)
+        slow = backwards_unit.eff_speed
         coef = 1 / (1 + abs(unit.position - backwards_unit.position))  # (0, 1]
         return coef*quick + (1-coef)*slow
 
-    def get_cohesive_speed(self, unit: Unit, pos_target: float, landscape: Landscape) -> float:
+    def get_cohesive_speed(self, unit: Unit, pos_target: float) -> float:
         """If moving backwards go at own speed, otherwise limit to slowest speed of lagging units"""
         if unit.moving_to_pos and pos_target < unit.position:
-            return unit.get_eff_speed(landscape)
+            return unit.eff_speed
         elif unit.moving_to_neg and pos_target > unit.position:
-            return unit.get_eff_speed(landscape)
+            return unit.eff_speed
         else:
-            return self.get_minimum_laggard_speed(unit, landscape)
+            return self.get_minimum_laggard_speed(unit)
 
-    def get_minimum_laggard_speed(self, unit: Unit, landscape: Landscape) -> float:
+    def get_minimum_laggard_speed(self, unit: Unit) -> float:
         # No need for default, because the unit itself should always be in the loop
-        return min((x.get_eff_speed(landscape) for x in self.deployed_units
+        return min((x.eff_speed for x in self.deployed_units
                     if x.get_dist_to(x.init_pos) <= unit.get_dist_to(unit.init_pos)))
 
     # UNITS
@@ -348,9 +328,7 @@ class Army:
     def get_backwards_neighbor(self, ref_unit: Unit) -> Unit | None:
         """Which unit adjacent to the given one is furthest back, if any"""
         neighbors = self.get_neighbors(ref_unit.file, include_self=True)
-        unit = min(neighbors,
-                   key=lambda unit: unit.get_dist_to(unit.init_pos),  # type: ignore[union-attr]
-                   default=None)
+        unit = min(neighbors, key=lambda unit: unit.get_dist_to(unit.init_pos), default=None)
         return None if unit is ref_unit else unit  
 
     def get_neighbors(self, file: int, include_self: bool = False) -> Iterable[Unit]:
@@ -363,9 +341,9 @@ class Army:
         if self.is_file_active(file + 1):
             yield self.file_units[file + 1]
 
-    #####################
-    """ BASIC SETTERS """
-    #####################
+    ################
+    """ ALTERERS """
+    ################
 
     def add(self, file: int, unit_type: UnitType) -> Self:
         self.file_units[file] = Unit(unit_type, self.stance, file)
@@ -376,18 +354,14 @@ class Army:
             self.reserves.append(Unit(unit_type, self.stance, 0))
         return self
 
-    def set_up(self, init_pos: float) -> None:
+    def set_up(self, init_pos: float, landscape: Landscape) -> None:
         self.file_units = dict(sorted(self.file_units.items()))  # Sorting by file convenient
         for unit in chain(self.deployed_units, self.reserves, self.removed):
-            unit.set_up(init_pos)
+            unit.set_up(init_pos, landscape)
 
     def change_all_units_morale(self, change: float) -> None:
         for unit in chain(self.deployed_units, self.reserves):
             unit.morale += change
-
-    ################
-    """ ALTERERS """
-    ################
 
     def remove_unit(self, unit: Unit, other_army: Self) -> None:
         file = unit.file

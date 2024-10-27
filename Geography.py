@@ -49,9 +49,11 @@ class Landscape:
         return self.accumulate_over_terrain(file, pos, lambda terrain: terrain.cover)
 
     def get_mean_scaled_roughness(self, file: int, pos: float, smooth_desire: float) -> float:
+
         def func(terrain: Terrain, smooth_desire: float) -> float:
             effect = -terrain.roughness * smooth_desire
             return min(effect, 0) if terrain.penalty else effect
+
         return self.accumulate_over_terrain(file, pos, lambda terrain: func(terrain, smooth_desire))
 
     def accumulate_over_terrain(self, file: int, pos: float, method: Callable[[Terrain], float]
@@ -73,14 +75,13 @@ class Landscape:
         ref_points = self.sort_nearest_points(file, pos)
         num_points = len(ref_points)
 
-        if num_points == 0:
-            return 0  # Absolute default
-        elif num_points == 1:
-            return ref_points[0][-1]  # Forced default
-        elif (file, pos) in self.height_map:
-            return self.height_map[(file, pos)]  # Don't interpolate if at an exact point
-        else:
-            # Standard case - interpolates using up to maximum number of points
+        if num_points == 0:  # Absolute default
+            return 0
+        elif num_points == 1:  # Forced default
+            return ref_points[0][-1]
+        elif (file, pos) in self.height_map:  # Don't interpolate if at an exact point
+            return self.height_map[(file, pos)]
+        else:  # Standard case - interpolates using up to maximum number of points
             return self._calc_height(file, pos, ref_points[:self.MAX_HEIGHT_INTERPOL])
 
     def _calc_height(self, file: float, pos: float, ref_points: list[tuple[float, float, float]]

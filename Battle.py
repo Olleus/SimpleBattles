@@ -129,8 +129,8 @@ class Battle:
     def __attrs_post_init__(self) -> None:
         """Armies positioned symmetrically, with the total gap being the sum of their reach"""
         init_pos = (self.army_1.army_reach + self.army_2.army_reach) / 2
-        self.army_1.set_up(-init_pos)
-        self.army_2.set_up(init_pos)
+        self.army_1.set_up(-init_pos, self.landscape)
+        self.army_2.set_up(init_pos, self.landscape)
 
     #############
     """ UTILS """
@@ -278,7 +278,7 @@ class Battle:
         return 2.0 ** ((att_pow - def_power) / (2*POWER_SCALE))
 
     def get_power_mods(self, unit: Unit) -> float:
-        change = unit.get_power_from_terrain(self.landscape)
+        change = unit.power_from_terrain
         change += self.get_army_deployed_in(unit).reserve_power
         change += self.get_unit_power_from_morale(unit)
         return change
@@ -328,7 +328,7 @@ class Battle:
             return self.FILE_MEAN + mean_dist*self.FILE_DIFF
 
     def inflict_casualties(self, unit: Unit, adv: float) -> None:
-        unit.morale -= DELTA_T * adv * (1-self.landscape.get_mean_cover(unit.file, unit.position))
+        unit.morale -= DELTA_T * adv * (1-unit.cover_from_terrain)
 
     def move_post_fight_two_way(self, unit_A: Unit, unit_B: Unit, advA: float, advB: float) -> None:
         self.call_neighbors_forwards(unit_A, unit_B)
@@ -399,7 +399,7 @@ class Battle:
     def _loser_push_by_winner(self, winner: Unit, loser: Unit, advantage: float) -> None:
         # Loser runs according to its speed, how badly it lost and rigidity, capped by winners speed
         coef = min(1, (advantage - 1) / (PUSH_RESISTANCE + loser.rigidity))
-        dist = min(winner.get_eff_speed(self.landscape), loser.get_eff_speed(self.landscape) * coef)
+        dist = min(winner.eff_speed, loser.eff_speed * coef)
         dist *= BASE_SPEED * DELTA_T * (1 if winner.moving_to_pos else -1)
         loser.position += dist
         self._follow_push_by_winner(winner, loser, dist)
@@ -429,8 +429,7 @@ class Battle:
                 army = self.get_army_deployed_in(unit)
                 enemy = self.get_other_army(army).get_blocking_unit(unit)
                 if not enemy:
-                    speed = unit.get_eff_speed(self.landscape)
-                    unit.move_towards(-unit.init_pos, speed)
+                    unit.move_towards(-unit.init_pos, unit.eff_speed)
                 elif not unit.is_in_range_of(enemy):
                     target = unit.get_position_to_attack_target(enemy, False)
                     self.move_unit_in_stance(unit, target)
@@ -446,20 +445,20 @@ class Battle:
 
         if unit.stance is Stance.AGG:
             if unit.is_in_charge_range_of(target):
-                speed = unit.get_eff_speed(self.landscape)
+                speed = unit.eff_speed
             else:
-                speed = army.get_aggressive_speed(unit, target, self.landscape)
+                speed = army.get_aggressive_speed(unit, target)
             unit.move_towards(target, speed)
 
         elif unit.stance is Stance.BAL:
             if unit.is_in_charge_range_of(target):
-                speed = unit.get_eff_speed(self.landscape)
+                speed = unit.eff_speed
             else:
-                speed = army.get_cohesive_speed(unit, target, self.landscape)
+                speed = army.get_cohesive_speed(unit, target)
             unit.move_towards(target, speed)
 
         elif unit.stance is Stance.DEF:
-            speed = army.get_cohesive_speed(unit, target, self.landscape)
+            speed = army.get_cohesive_speed(unit, target)
             self.move_unit_haltingly(unit, target, speed)
 
         else:
@@ -478,17 +477,15 @@ class Battle:
         if unit.position == old_pos:
             return  # Prevents later division by 0 and, if not moving anyway, rest is pointless
 
-        new_desire = self.get_unit_pos_desire(unit)
         new_lag = unit.get_dist_to(backwards_unit.position) if backwards_unit else 0
-
-        gradient = (old_desire - new_desire) / unit.get_dist_to(old_pos)
-        # Add a desire (up to 1/2 of required) to stop in middle of battlefield rather than edge
+        gradient = (old_desire - self.get_unit_pos_desire(unit)) / unit.get_dist_to(old_pos)
         gradient += (0.5 - abs(unit.position)/abs(unit.init_pos)) * HALT_POWER_GRADIENT
+        # Adds a desire of +-1/2 of required to stop in the middle of battlefield rather than edge
 
         unit.confirm_move(gradient, old_pos, old_lag, new_lag)
 
     def get_unit_pos_desire(self, unit: Unit) -> float:
-        return self.get_power_mods(unit)+10*self.landscape.get_mean_cover(unit.file, unit.position)
+        return self.get_power_mods(unit) + 10*unit.cover_from_terrain
 
     ################
     """ PRINTING """
@@ -504,7 +501,7 @@ class Battle:
         print(f"\nTurn {self.turns}")
         self.print_fights()
         for army in (self.army_1, self.army_2):
-            print(army.str_in_battle(self.landscape, self.get_power_mods, self.get_eff_morale))
+            print(army.str_in_battle(self.get_power_mods, self.get_eff_morale))
 
     def print_fights(self) -> None:
         all_fights = self.fight_pairs.two_way_pairs + self.fight_pairs.one_way_pairs
