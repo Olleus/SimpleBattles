@@ -203,7 +203,6 @@ class Battle:
     """ TIDY """
     ############
 
-    # TODO: Test doesn't change anything
     def tidy(self) -> None:
         units_to_remove: list[Unit] = []
 
@@ -218,11 +217,7 @@ class Battle:
         unit.forced_move_towards = None
         if unit.at_end:
             self.do_unit_reached_end(unit)
-
-        if self.get_eff_morale(unit) <= 0 or unit.at_home:
-            return True
-        else:
-            return False
+        return self.get_eff_morale(unit) <= 0 or unit.at_home
 
     def do_unit_reached_end(self, unit: Unit) -> None:
         army = self.get_army_deployed_in(unit)
@@ -356,29 +351,19 @@ class Battle:
             pass
         elif unit_A.ranged and unit_B.ranged:
             pass
-
-        elif unit_A.ranged and unit_B.mixed:
-            if unit_B.stance is not Stance.DEF:
-                unit_B.forced_move_towards = unit_A
-
-        elif unit_A.mixed and unit_B.ranged:
-            if unit_A.stance is not Stance.DEF:
-                unit_A.forced_move_towards = unit_B
+        elif unit_A.ranged and unit_B.mixed and (unit_B.stance is not Stance.DEF):
+            unit_B.forced_move_towards = unit_A
+        elif unit_A.mixed and unit_B.ranged and (unit_A.stance is not Stance.DEF):
+            unit_A.forced_move_towards = unit_B
 
         elif unit_A.mixed and unit_B.mixed:
             if not unit_A.is_in_front(unit_B):
                 unit_A.forced_move_towards = unit_B
                 unit_B.forced_move_towards = unit_A
-                pass
-
             if unit_A.stance is Stance.AGG:
                 unit_A.forced_move_towards = unit_B
-
             if unit_B.stance is Stance.AGG:
                 unit_B.forced_move_towards = unit_A
-        
-        else:  # (ranged or mixed) vs melee outside of melee range is impossible for a two way fight
-            raise RuntimeError(f"Impossible branch reached with {unit_A}, {unit_B}")
 
     def set_force_move_one_way_fight(self, unit_A: Unit, unit_B: Unit) -> None:
         if unit_A.mixed and not unit_A.is_in_range_of(unit_B, melee=True):

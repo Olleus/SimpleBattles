@@ -7,7 +7,7 @@ from attrs import define, Factory, field, validators
 
 from Config import DELTA_T
 from Geography import Landscape
-from Globals import POS_DEC_DIG, RESERVE_DIST_BEHIND, MIN_DEPLOY_DIST, SIDE_RANGE_PENALTY, \
+from Globals import RESERVE_DIST_BEHIND, MIN_DEPLOY_DIST, SIDE_RANGE_PENALTY, \
                     BASE_SPEED, CHARGE_DISTANCE, HALT_POWER_GRADIENT, \
                     TERRAIN_POWER, HEIGHT_DIF_POWER, RESERVES_POWER, RESERVES_SOFT_CAP, Stance
 
@@ -50,7 +50,9 @@ class UnitType:
 @define(eq=False)
 class Unit:
     """A specific unit that exists wthin an actual army"""
-    EPS = 0.5 * (0.1 ** POS_DEC_DIG)  # Class Attribute, use to prevent floating point errors
+    # Class Attribute, use to prevent floating point errors
+    POS_DEC_DIG = 3         # Position is rounded to this many decimal places
+    EPS = 0.1 ** 3          # Max rounding error, used to push rounding one way or the other
 
     unit_type: UnitType
     stance: Stance
@@ -113,7 +115,7 @@ class Unit:
     @position.setter
     def position(self, value: float):
         position = max(-abs(self.init_pos), min(value, abs(self.init_pos)))
-        self._position = round(position, POS_DEC_DIG)
+        self._position = round(position, self.POS_DEC_DIG)
 
     @property
     def height(self) -> float:
@@ -176,7 +178,7 @@ class Unit:
 
     def set_up(self, init_pos: float, landscape: Landscape) -> None:
         self.init_pos = init_pos
-        self.position = init_pos + self.EPS*(2 if self.moving_to_pos else -2)
+        self.position = init_pos + self.EPS*(1 if self.moving_to_pos else -1)
         self.landscape = landscape
     
     def move_towards(self, target: float, speed: float) -> None:

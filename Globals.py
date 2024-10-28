@@ -1,10 +1,6 @@
 """Constants used through out. Unlike configs does not vary between implementations"""
-
 from enum import IntEnum
 
-
-# Internal computation
-POS_DEC_DIG: int = 3             # Position is rounded to this many decimal places
 
 # Distance
 # UNIT_HEIGHT = 1                # Height of all units

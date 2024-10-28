@@ -13,23 +13,25 @@ from Geography import DEFAULT_TERRAIN, Landscape
 from Globals import FILE_WIDTH, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, Stance, BattleOutcome
 from Unit import Army, Unit
 
-UNIT_FILE_WIDTH: float = 0.95
-ATTACK_LINE_OFFSET: float = 0.2
-ARROWHEAD_SIZE: float = 0.25
-STANCE_ICON_FRAC: float = 1 / 7
-FONT_SIZE_FRAC: float = 1 / 2.2
+# Visual constants
+UNIT_FILE_WIDTH: float = 0.95         # Width of unit relative to file
+ATTACK_LINE_OFFSET: float = 0.2       # Fractional offset of fight arrow from unit centre
+ARROWHEAD_SIZE: float = 0.25          # Size of fight arrowhead relative to unit size
+STANCE_ICON_FRAC: float = 1 / 7       # Size of the Stance icon relative to unit size
+FONT_SIZE_FRAC: float = 0.48          # Font size relative to unit pixel height
 
 
 @define
 class Scene:
     """Contains a list of frames showing the battle, along with methods for drawing them"""
-    max_screen: tuple[int, int]
+    max_pixels_x: int
     landscape: Landscape
     min_file: int
     max_file: int
     min_pos: float
     max_pos: float
 
+    drawn_file_width: float = field(init=False)
     pixel_per_pos: float = field(init=False)
     pixel_per_file: float = field(init=False)
     pixels_unit: tuple[float, float] = field(init=False)
@@ -44,25 +46,32 @@ class Scene:
         num_files = 1 + self.max_file - self.min_file  # Count files, not gaps
         num_pos = 4 + self.max_pos - self.min_pos      # Including space for reserves and dead
         
-        file_pixel_width = self.max_screen[0] / num_files
-        pos_pixel_height = self.max_screen[1] / num_pos
-
-        if pos_pixel_height * FILE_WIDTH < file_pixel_width:
-            self.pixel_per_pos = pos_pixel_height
-            self.pixel_per_file = self.pixel_per_pos * FILE_WIDTH
+        # Use "true" file width, but scale to prevent aspect ratio greater than 1x1
+        if FILE_WIDTH * num_files > num_pos:
+            self.drawn_file_width = FILE_WIDTH
+            self.pixel_per_file = self.max_pixels_x / num_files
+            self.pixel_per_pos = self.pixel_per_file / self.drawn_file_width
         else:
-            self.pixel_per_pos = file_pixel_width / FILE_WIDTH
-            self.pixel_per_file = file_pixel_width
+            print(num_pos / num_files)
+            self.drawn_file_width = min(num_pos / num_files, 10)
+            self.pixel_per_pos = self.max_pixels_x / num_pos
+            self.pixel_per_file = self.pixel_per_pos * self.drawn_file_width
+
+        if self.drawn_file_width < 6.5:
+            self.font_size = int(self.pixel_per_pos * FONT_SIZE_FRAC)
+        else:
+            self.font_size = int(self.pixel_per_file * FONT_SIZE_FRAC / 6.5)
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
-        self.font_size = int(self.pixel_per_pos * FONT_SIZE_FRAC)
+        
         self.draw_background()
+        print(f"f{self.croped_res=}    {self.font_size=}")
 
     # GETTERS
     def get_coords(self, file: float, pos: float) -> tuple[float, float]:
-        """Pixel position of a point in the middle of the given file at the given position"""
-        """Returns ints in float type for ease of vector manipulations later"""
+        """Pixel position of a point in the middle of the given file at the given position.
+        Returns ints in float type for ease of vector manipulations in other methods"""
         file_steps = 0.5 + file - self.min_file
         pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
@@ -158,30 +167,38 @@ class Scene:
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
         self.frames.append(self.canvas)
 
-    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], pow_mods: float,
+    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], pow_mod: float,
                         morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+2), int(y+2)), color=bkgd_color)
         draw = ImageDraw.Draw(image)
 
-        # Draw Rectangle
         draw.line([(1, 1), (x-1, 1)], fill=color, width=2)
         draw.line([(1, y), (x-1, y)], fill=color, width=2)
         draw.line([(1, 1), (1, y)], fill=color, width=int(self.get_line_width(flanks[0])))
         draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
         
-        # Draw Text
-        string = f"{unit.name} {100*morale:.0f}%" + " "*7  # Extra spaces to move it left a little
-        draw.text((x//2, y//2), string, fill=color, font_size=self.font_size, anchor="mm")
-        draw.text((x-3, 1), f"{unit.power + pow_mods:.0f} M",
-                  fill=color, font_size=self.font_size-3, anchor="ra")
-        if unit.ranged or unit.mixed:
-            draw.text((x-4, y+1), f"{unit.pow_range + pow_mods:.0f} R",
-                      fill=color, font_size=self.font_size-3, anchor="rd")
-
-        # Draw Stance
+        self.draw_unit_text(draw, x, y, unit, color, pow_mod, morale)
         self.draw_stance_poligon(draw, unit, color)
         return image
+
+    def draw_unit_text(self, draw: ImageDraw.ImageDraw, x: float, y: float, unit: Unit, color: str,
+                       pow_mod: float, morale: float) -> None:
+        small = self.font_size - int(0.15*self.font_size)
+        mid = int(y+2) // 2
+        name = f"{unit.name} {100*morale:.0f}%"
+        str_m = f"{unit.power + pow_mod:.0f} M"
+        str_r = f"{unit.pow_range + pow_mod:.0f} R" if (unit.ranged or unit.mixed) else ""
+
+        if self.drawn_file_width < 6.5:  # Power in a column fits better when squarish
+            draw.text((x//2, mid), name+" "*6, fill=color, font_size=self.font_size, anchor="mm")
+            draw.text((x-3, 4), str_m, fill=color, font_size=small, anchor="rt")
+            if str_r:
+                draw.text((x-4, y-1), str_r, fill=color, font_size=small, anchor="rb")
+
+        else:  # Everything in one line fits better when long and skinny
+            draw.text((x//3, mid), name, fill=color, font_size=self.font_size, anchor="mm")
+            draw.text((x-4, mid), str_m+" "+str_r, fill=color, font_size=small, anchor="rm")
 
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
         r = self.pixel_per_pos * STANCE_ICON_FRAC
@@ -212,7 +229,7 @@ class Scene:
 
     def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float]) -> None:
         x_offset = self.pixel_per_pos * ATTACK_LINE_OFFSET
-        y_offset = FILE_WIDTH/2 * (1-ATTACK_LINE_OFFSET) * self.pixel_per_pos
+        y_offset = self.drawn_file_width/2 * (1-ATTACK_LINE_OFFSET) * self.pixel_per_pos
 
         if pos_A[0] == pos_B[0] or abs(pos_A[1] - pos_B[1]) > self.pixel_per_pos:
             if pos_A[1] > pos_B[1]:
@@ -251,7 +268,7 @@ class GraphicBattle(Battle):
     """Same as parent, but draws a frame every turn and then saves them as a gif
         GOOD PRACTICE TO CALL GARBAGE COLLECTOR - gc.collect(2) -
         AFTER CLASS IS DONE TO FREE UP MEMORY BALER"""
-    max_screen: tuple[int, int]
+    max_pixels_x: int
     gif_name: str
     scene: Scene = field(init=False)
 
@@ -265,7 +282,7 @@ class GraphicBattle(Battle):
         # Allowing space for physical size of starting units
         min_pos = min(x.init_pos for x in self.army_1.file_units.values()) - 0.5
         max_pos = max(x.init_pos for x in self.army_2.file_units.values()) + 0.5
-        self.scene = Scene(self.max_screen, self.landscape, min_file, max_file, min_pos, max_pos)
+        self.scene = Scene(self.max_pixels_x, self.landscape, min_file, max_file, min_pos, max_pos)
 
     def do_turn(self, verbosity: int) -> None:
         super().do_turn(verbosity)

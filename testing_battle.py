@@ -19,7 +19,7 @@ def do_single_terrain_battle(army_1, army_2, terrain, name="testing_out"):
     files = set(army_1.file_units) | set(army_2.file_units)
     landscape = Landscape({file: {inf: terrain} for file in files})
     if graphical:
-        GraphicBattle(army_1, army_2, landscape, (1080, 720), name).do(10)
+        GraphicBattle(army_1, army_2, landscape, 920, name).do(10)
     else:
         Battle(army_1, army_2, landscape).do(10)
 
@@ -260,7 +260,7 @@ def test_E2():
                            0: {inf: smooth},
                            1: {inf: river}})
 
-    GraphicBattle(army_1, army_2, landscape, (720, 480), "testing_out").do(verbosity=10)
+    GraphicBattle(army_1, army_2, landscape, 720, "testing_out").do(verbosity=10)
 
 
 def test_E3():
@@ -340,7 +340,7 @@ def test_G1():
     terrain = {0: {-2.5: rough, -1.5: broken, -0.5: even, 0: ragged,
                    0.5: smooth, 1: even, 2: forest, 3: river, 4: ragged, inf: even}}
     landscape = Landscape(terrain, {})
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
 def test_G2():
@@ -354,7 +354,7 @@ def test_G2():
     terrain = {0: {inf: even}}
     height = {(0, -4): 6.1, (0, 4): 0}
     landscape = Landscape(terrain, height)
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
 def test_G3():
@@ -379,7 +379,7 @@ def test_G3():
               (1.45, 2): -1}
     landscape = Landscape(terrain, height)
 
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(verbosity=10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(verbosity=10)
 
 
 """ Testing Stances"""
@@ -404,7 +404,7 @@ def test_H1():
     # Check all combinations of stances look reasonable
     army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.DEF)
     landscape = Landscape(terrain, {})
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
 def test_H2():
@@ -421,7 +421,7 @@ def test_H2():
               (-1.6, -7.5): 0,
               (1.2, -6.5): 3}
     landscape = Landscape(terrain, height)
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
 def test_H3():
@@ -438,7 +438,7 @@ def test_H3():
               (-1.6, -7.5): 0,
               (1.2, -6.5): 5}
     landscape = Landscape(terrain, height)
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
 def test_H4():
@@ -448,7 +448,7 @@ def test_H4():
     army_2.add(-2, mixed).add(-1, mixed).add(0, mixed)
 
     landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
-    GraphicBattle(army_1, army_2, landscape, (1080, 720), "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
 
 
-test_H2()
+test_H4()
