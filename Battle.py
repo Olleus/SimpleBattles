@@ -57,7 +57,9 @@ class FightPairs:
     def find_single_potentials(self, file: int, unit: Unit, opposing: Army) -> set[Unit]:
         targets: set[Unit] = set()
 
-        for file in [file-1, file, file+1]:
+        # TODO: TEST
+        files = opposing.file_units.keys() if unit.all_sides else [file-1, file, file+1]
+        for file in files:
             target = opposing.file_units.get(file, None)
             if target is not None and unit.is_in_range_of(target):
                 targets.add(target)
@@ -72,7 +74,7 @@ class FightPairs:
                 (Recall that True > False)"""
             unit, target = args
             frontal = unit.is_in_front(target)
-            dist = unit.get_dist_to(target.position)
+            dist = unit.get_dist_to(target.position) + unit.get_range_penalty_against(target)  # TODO: TEST
             melee = unit.is_in_range_of(target, melee=True)
             attacker = target in assigned_to.get(unit, set())
             unassigned = target not in self._assignments

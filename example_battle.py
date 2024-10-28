@@ -16,13 +16,15 @@ from Unit import Army
 # GraphicBattle(army_1, army_2, landscape, 800, "example_out").do(10)
 
 
-from Data import line, light, grenadier, cuirassier, chasseur, cannon  # noqa
+from Data import line, light, grenadier, cuirassier, hussar, cannon  # noqa
 
-army_1 = Army("Blue", Stance.BAL, "DarkBlue")
-army_1.add(-1, line).add(2, line).add(3, chasseur)
+army_1 = Army("Blue", Stance.DEF, "DarkBlue")
+army_1.add(-2, light).add(-1, cannon).add(0, line).add(1, line).add(2, hussar)
+army_1.add_reserves(grenadier)
 
-army_2 = Army("Red", Stance.AGG, "DarkRed")
-army_2.add(-1, cannon).add(0, line).add(1, line).add(2, line).add(3, cuirassier)
+army_2 = Army("Red", Stance.BAL, "DarkRed")
+army_2.add(-2, line).add(-1, grenadier).add(0, line).add(1, line).add(2, cuirassier)
+army_2.add_reserves(hussar)
 
 landscape = PresetLandscapes.sloping()
-GraphicBattle(army_1, army_2, landscape, 800, "modern_out").do(10)
+GraphicBattle(army_1, army_2, landscape, 920, "modern_out2").do(10)

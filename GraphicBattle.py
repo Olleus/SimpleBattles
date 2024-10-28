@@ -52,7 +52,6 @@ class Scene:
             self.pixel_per_file = self.max_pixels_x / num_files
             self.pixel_per_pos = self.pixel_per_file / self.drawn_file_width
         else:
-            print(num_pos / num_files)
             self.drawn_file_width = min(num_pos / num_files, 10)
             self.pixel_per_pos = self.max_pixels_x / num_pos
             self.pixel_per_file = self.pixel_per_pos * self.drawn_file_width
@@ -60,13 +59,12 @@ class Scene:
         if self.drawn_file_width < 6.5:
             self.font_size = int(self.pixel_per_pos * FONT_SIZE_FRAC)
         else:
-            self.font_size = int(self.pixel_per_file * FONT_SIZE_FRAC / 6.5)
+            self.font_size = int(self.pixel_per_file * FONT_SIZE_FRAC / 7)
 
         self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
         
         self.draw_background()
-        print(f"f{self.croped_res=}    {self.font_size=}")
 
     # GETTERS
     def get_coords(self, file: float, pos: float) -> tuple[float, float]:

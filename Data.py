@@ -253,11 +253,13 @@ landscape_dict = {k: v for k, v in PresetLandscapes.__dict__.items()
                   if isinstance(v, staticmethod) and v.__annotations__["return"] is Landscape}
 
 # 18th Century roster, deliberately not included in the above
-line = UnitType("Line Inf", 600, 0.2, att_range=8, pow_range=500)
-light = UnitType("Light Inf", 500, -0.3, att_range=10, pow_range=550)
-grenadier = UnitType("Grenadier", 620, 0.4, att_range=6, pow_range=460)
+line = UnitType("Line Inf", 600, 0.2, att_range=9, pow_range=560)
+light = UnitType("Voltigeur", 450, -0.3, att_range=10, pow_range=580)
+grenadier = UnitType("Grenadier", 640, 0.4, att_range=8, pow_range=520)
+cannon = UnitType("Battery", 360, 0, speed=0.8, att_range=18, pow_range=520, all_sides=False)
+cuirassier = UnitType("Cuirassier", 620, 0.1, speed=1.6)
+hussar = UnitType("Hussar", 570, -0.6, speed=2.1)
 
-cuirassier = UnitType("Shock Cav", 640, -0.2, speed=1.8)
-chasseur = UnitType("Light Cav", 550, -0.4, speed=2, att_range=4, pow_range=480)
 
-cannon = UnitType("Cannon", 300, 0, speed=0.8, att_range=15, pow_range=520)
+units_18C_dict = {x.name: x for x in globals().values()
+                  if isinstance(x, UnitType) and x not in unit_dict}

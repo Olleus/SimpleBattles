@@ -20,6 +20,7 @@ class UnitType:
     rigidity: float = field(default=0, validator=validators.gt(-1))  # O(1)
     speed: float = field(default=1, validator=validators.gt(0))  # O(1)
     att_range: float = field(default=1, validator=validators.ge(1))  # O(1)
+    all_sides: bool = field(default=False)  # If true can attack any file (quadratic range penalty)
     pow_range: float = field()
 
     @pow_range.default
@@ -94,6 +95,8 @@ class Unit:
     @property
     def pow_range(self) -> float: return self.unit_type.pow_range
     @property
+    def all_sides(self) -> bool: return self.unit_type.all_sides  # TODO: Use
+    @property
     def smooth_desire(self) -> float: return self.unit_type.smooth_desire
     @property
     def melee(self) -> bool: return self.unit_type.melee
@@ -161,7 +164,10 @@ class Unit:
 
     def get_eff_range_against(self, unit: Self, melee: bool = False) -> float:
         base_range = 1 if melee else self.att_range
-        return base_range if self.is_in_front(unit) else base_range - SIDE_RANGE_PENALTY
+        return base_range - self.get_range_penalty_against(unit)
+
+    def get_range_penalty_against(self, unit: Self) -> float:
+        return abs(self.file - unit.file)**2 * SIDE_RANGE_PENALTY
 
     def get_position_to_attack_target(self, unit: Self, melee: bool = False) -> float:
         eff_range = self.get_eff_range_against(unit, melee)
@@ -319,12 +325,17 @@ class Army:
 
     # UNITS
     def get_blocking_unit(self, enemy: Unit) -> Unit | None:
-        """Which unit would the enemy) first encounter, if any"""
+        """Which unit would the enemy first encounter, if any"""
         def sort_key(enemy, unit):
             dist = unit.get_dist_to(enemy.position)
-            return dist + (0 if enemy.is_in_front(unit) else SIDE_RANGE_PENALTY)
+            return dist + unit.get_range_penalty_against(enemy)
 
-        neighbors = self.get_neighbors(enemy.file, include_self=True)
+        # TODO: TEST
+        if enemy.all_sides:
+            neighbors = self.deployed_units
+        else:
+            neighbors = self.get_neighbors(enemy.file, include_self=True)
+
         return min(neighbors, key=lambda unit: sort_key(enemy, unit), default=None)
 
     def get_backwards_neighbor(self, ref_unit: Unit) -> Unit | None:
