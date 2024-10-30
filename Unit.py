@@ -1,4 +1,4 @@
-"""Definitions of units, the different types of units, and the armies they form"""
+"""Definitions of units and the armies they form"""
 from itertools import chain
 from math import log
 from typing import Callable, Iterable, Self

@@ -1,3 +1,4 @@
+"""Mostly balance tests and some visual checks of behaviour, not proper unit tests"""
 from math import inf
 
 from Battle import Battle
@@ -19,7 +20,7 @@ def do_single_terrain_battle(army_1, army_2, terrain, name="testing_out"):
     files = set(army_1.file_units) | set(army_2.file_units)
     landscape = Landscape({file: {inf: terrain} for file in files})
     if graphical:
-        GraphicBattle(army_1, army_2, landscape, 920, name).do(10)
+        GraphicBattle(army_1, army_2, landscape, 720, name).do(10)
     else:
         Battle(army_1, army_2, landscape).do(10)
 
@@ -32,7 +33,7 @@ def test_A1():
     army_1, army_2 = preamble()
     army_1.add(0, spear)
     army_2.add(0, sword)
-    do_single_terrain_battle(army_1, army_2, even)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 def test_A2():
@@ -40,7 +41,7 @@ def test_A2():
     army_1, army_2 = preamble()
     army_1.add(-1, spear).add(0, spear).add(1, spear)
     army_2.add(-1, sword).add(0, sword).add(1, sword)
-    do_single_terrain_battle(army_1, army_2, broken)
+    do_single_terrain_battle(army_1, army_2, rough)
 
 
 def test_A3():
@@ -48,7 +49,7 @@ def test_A3():
     army_1, army_2 = preamble()
     army_1.add(0, spear)
     army_2.add(0, pike)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_A4():
@@ -72,7 +73,7 @@ def test_A6():
     army_1, army_2 = preamble()
     army_1.add(-1, sword).add(0, sword).add(1, sword)
     army_2.add(-1, pike).add(0, pike).add(1, pike)
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 """ Adding in ranged units to the mix """
@@ -81,17 +82,17 @@ def test_A6():
 def test_B1():
     # spears win on rough, javelins win on broken
     army_1, army_2 = preamble()
-    army_1.add(0, spear).add(1, spear)
-    army_2.add(0, javelin).add(1, javelin)
-    do_single_terrain_battle(army_1, army_2, rough)
+    army_1.add(0, spear)
+    army_2.add(0, javelin)
+    do_single_terrain_battle(army_1, army_2, broken)
 
 
 def test_B2():
     # spears broken, javelins win on ragged
     army_1, army_2 = preamble()
-    army_1.add(-2, spear).add(-1, spear).add(0, spear).add(1, spear).add(2, spear)
-    army_2.add(-2, javelin).add(-1, javelin).add(0, javelin).add(1, javelin).add(2, javelin)
-    do_single_terrain_battle(army_1, army_2, broken)
+    army_1.add(-1, spear).add(0, spear).add(1, spear)
+    army_2.add(-1, javelin).add(0, javelin).add(1, javelin)
+    do_single_terrain_battle(army_1, army_2, ragged)
 
 
 def test_B3():
@@ -115,7 +116,7 @@ def test_B5():
     army_1, army_2 = preamble()
     army_1.add(0, javelin).add(1, javelin)
     army_2.add(0, archer).add(1, archer)
-    do_single_terrain_battle(army_1, army_2, river)
+    do_single_terrain_battle(army_1, army_2, ragged)
 
 
 def test_B6():
@@ -180,18 +181,10 @@ def test_C2b():
 
 
 def test_C3():
-    # Neither unit closes in, pushing stays at range
+    # Only offset unit moves in
     army_1, army_2 = preamble()
     army_1.add(0, mixed)
-    army_2.add(0, mixed)
-    do_single_terrain_battle(army_1, army_2, rough)
-
-
-def test_C4():
-    # Both units close in, pushing stays at melee
-    army_1, army_2 = preamble()
-    army_1.add(0, mixed)
-    army_2.add(1, mixed)  # Note Offset
+    army_2.add(0, mixed).add(1, mixed)
     do_single_terrain_battle(army_1, army_2, rough)
 
 
@@ -211,7 +204,7 @@ def test_D2():
     army_1, army_2 = preamble()
     army_1.add(0, pike)
     army_2.add(0, h_horse)
-    do_single_terrain_battle(army_1, army_2, smooth)
+    do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_D3():
@@ -223,19 +216,19 @@ def test_D3():
 
 
 def test_D4():
-    # shock wins on broken, light on ragged
+    # shock wins on almost everything, light on river
     army_1, army_2 = preamble()
     army_1.add(0, h_horse).add(1, h_horse)
     army_2.add(1, l_horse).add(2, l_horse)  # NOTE DELIBERATE OFFSET
-    do_single_terrain_battle(army_1, army_2, ragged)
+    do_single_terrain_battle(army_1, army_2, river)
 
 
 def test_D5():
-    # horses wins on rough, loses on broken
+    # horses wins on rough, loses on even
     army_1, army_2 = preamble()
     army_1.add(0, spear).add(1, spear)
     army_2.add(1, h_horse).add(2, l_horse)  # NOTE DELIBERATE OFFSET
-    do_single_terrain_battle(army_1, army_2, rough)
+    do_single_terrain_battle(army_1, army_2, smooth)
 
 
 """ Checking reserves work as intended """
@@ -274,7 +267,7 @@ def test_E3():
 
 def test_E4():
     # 4+1 beat 5+0 for swords and spears, but not pikes or mixed
-    x = mixed
+    x = spear
     army_1, army_2 = preamble()
     army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
     army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
@@ -283,7 +276,7 @@ def test_E4():
 
 def test_E5():
     # 4+1 beat 3+2 always
-    x = mixed
+    x = spear
     army_1, army_2 = preamble()
     army_1.stance = Stance.AGG
     army_1.add(-2, x).add(-1, x).add(0, x).add_reserves(x, x)
@@ -291,7 +284,6 @@ def test_E5():
     do_single_terrain_battle(army_1, army_2, even)
 
 
-test_E4()
 """ Testing how many weak units are needed to defeat a strong one """
 
 
@@ -309,7 +301,7 @@ def test_F1():
 def test_F2():
     # Militia power so that they just lose
     from Unit import UnitType
-    militia = UnitType("Militia", 212)  # -78
+    militia = UnitType("Militia", 211)  # -79
 
     army_1, army_2 = preamble()
     army_1.add(-1, sword).add(0, sword).add(1, sword)
@@ -331,7 +323,7 @@ def test_F3():
 def test_F4():
     # Militia power so that they just lose
     from Unit import UnitType
-    militia = UnitType("P Militia", 226, 0.6)  # -94
+    militia = UnitType("P Militia", 225, 0.6)  # -95
 
     army_1, army_2 = preamble()
     army_1.add(-1, pike).add(0, pike).add(1, pike)
@@ -351,7 +343,7 @@ def test_G1():
     terrain = {0: {-2.5: rough, -1.5: broken, -0.5: even, 0: ragged,
                    0.5: smooth, 1: even, 2: forest, 3: river, 4: ragged, inf: even}}
     landscape = Landscape(terrain, {})
-    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 600, "testing_out").do(10)
 
 
 def test_G2():
@@ -365,7 +357,7 @@ def test_G2():
     terrain = {0: {inf: even}}
     height = {(0, -4): 6.1, (0, 4): 0}
     landscape = Landscape(terrain, height)
-    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 600, "testing_out").do(10)
 
 
 def test_G3():
@@ -390,7 +382,7 @@ def test_G3():
               (1.45, 2): -1}
     landscape = Landscape(terrain, height)
 
-    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(verbosity=10)
+    GraphicBattle(army_1, army_2, landscape, 720, "testing_out").do(verbosity=10)
 
 
 """ Testing Stances"""
@@ -413,14 +405,14 @@ def utils_for_H_tests(stance_1: Stance, stance_2: Stance):
 
 def test_H1():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.DEF)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.AGG, Stance.BAL)
     landscape = Landscape(terrain, {})
-    GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
+    GraphicBattle(army_1, army_2, landscape, 800, "testing_out").do(10)
 
 
 def test_H2():
     # Check all combinations of stances look reasonable
-    army_1, army_2, terrain = utils_for_H_tests(Stance.AGG, Stance.BAL)
+    army_1, army_2, terrain = utils_for_H_tests(Stance.DEF, Stance.AGG)
 
     height = {(2.2, 0): -3,
               (0.9, 0): -3,
@@ -454,9 +446,9 @@ def test_H3():
 
 def test_H4():
     # Check all combinations of stances look reasonable
-    army_1, army_2, _ = utils_for_H_tests(Stance.DEF, Stance.DEF)
+    army_1, army_2, _ = utils_for_H_tests(Stance.BAL, Stance.DEF)
     army_1.add(0, mixed).add(1, mixed).add(2, mixed)
     army_2.add(-2, mixed).add(-1, mixed).add(0, mixed)
 
-    landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
+    landscape = PresetLandscapes.rolling_green()
     GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)

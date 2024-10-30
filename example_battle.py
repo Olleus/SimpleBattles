@@ -1,3 +1,4 @@
+"""Examples of simple scripts to make and resolve battles"""
 from Data import PresetLandscapes, sword, spear, pike, irreg, javelin, archer, mixed, h_horse, l_horse  # noqa
 from Globals import Stance
 from GraphicBattle import GraphicBattle
