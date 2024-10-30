@@ -446,9 +446,12 @@ def test_H3():
 
 def test_H4():
     # Check all combinations of stances look reasonable
-    army_1, army_2, _ = utils_for_H_tests(Stance.BAL, Stance.DEF)
+    army_1, army_2, _ = utils_for_H_tests(Stance.DEF, Stance.BAL)
     army_1.add(0, mixed).add(1, mixed).add(2, mixed)
     army_2.add(-2, mixed).add(-1, mixed).add(0, mixed)
 
     landscape = PresetLandscapes.rolling_green()
     GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
+
+
+test_H4()

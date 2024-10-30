@@ -264,4 +264,4 @@ hussar = UnitType("Hussar", 570, -0.6, speed=2.1)
 tribesmen = UnitType("Tribesmen", 480, -0.3, speed=1.2)
 
 units_18C_dict = {x.name: x for x in globals().values()
-                  if isinstance(x, UnitType) and x not in unit_dict}
+                  if isinstance(x, UnitType) and x.name not in unit_dict}

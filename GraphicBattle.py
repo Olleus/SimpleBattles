@@ -202,12 +202,14 @@ class Scene:
                    ) -> None:
         pos_A = list(self.get_coords(unit_A.file, unit_A.position))
         pos_B = list(self.get_coords(unit_B.file, unit_B.position))
-        self.adjust_line_end_points(pos_A, pos_B, unit_A.is_in_range_of(unit_B, melee=True))
+        self.adjust_line_end_points(pos_A, pos_B)
         self.draw_aa_arrow(pos_A, pos_B, color, both)
 
-    def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float], melee: bool) -> None:
+    def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float]) -> None:
+        close = abs(pos_A[1] - pos_B[1]) <= 0.75 * self.pixel_per_pos
+
         y_step = 0.2 * self.pixels_unit[1]
-        if pos_A[0] == pos_B[0] or not melee:
+        if pos_A[0] == pos_B[0] or not close:
             if pos_A[1] > pos_B[1]:
                 pos_A[1] -= y_step
                 pos_B[1] += y_step
@@ -215,7 +217,7 @@ class Scene:
                 pos_A[1] += y_step
                 pos_B[1] -= y_step
 
-        x_step = (0.45*self.pixels_unit[0]) if melee else (0.3*self.pixels_unit[0])
+        x_step = (0.45*self.pixels_unit[0]) if close else (0.3*self.pixels_unit[0])
         if pos_A[0] > pos_B[0]:
             pos_A[0] -= x_step
             pos_B[0] += x_step
@@ -225,6 +227,7 @@ class Scene:
 
     def draw_aa_arrow(self, start: list[float], end: list[float], color: str | tuple[int, ...],
                       both: bool = False) -> None:
+        """Uses existing anti-aliasing by drawing a horizontal line, then rotating it to position"""
         # COMPUTE
         vec = end[0] - start[0], end[1] - start[1]
         length = sqrt(vec[0]**2 + vec[1]**2)
