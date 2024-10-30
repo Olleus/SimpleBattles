@@ -7,7 +7,7 @@ from attrs import define, Factory, field, validators
 
 from Config import DELTA_T
 from Geography import Landscape
-from Globals import RESERVE_DIST_BEHIND, MIN_DEPLOY_DIST, SIDE_RANGE_PENALTY, \
+from Globals import RESERVE_FRC_BEHIND, MIN_DEPLOY_DIST, SIDE_RANGE_PENALTY, \
                     BASE_SPEED, CHARGE_DISTANCE, HALT_POWER_GRADIENT, \
                     TERRAIN_POWER, HEIGHT_DIF_POWER, RESERVES_POWER, RESERVES_SOFT_CAP, Stance
 
@@ -59,12 +59,12 @@ class Unit:
     stance: Stance
     file: int
     init_pos: float = field(init=False, default=0)
-    landscape: Landscape | None = field(init=False)
+    landscape: Landscape | None = field(init=False, repr=False)
 
     # Vary continuously
     _position: float = field(init=False, default=0)
     morale: float = field(init=False, default=1)
-    forced_move_towards: Self | None = field(init=False, default=None)
+    forced_move_towards: Self | None = field(init=False, default=None, repr=False)
     halted: bool = field(init=False, default=False)
 
     def __str__(self) -> str:
@@ -95,7 +95,7 @@ class Unit:
     @property
     def pow_range(self) -> float: return self.unit_type.pow_range
     @property
-    def all_sides(self) -> bool: return self.unit_type.all_sides  # TODO: Use
+    def all_sides(self) -> bool: return self.unit_type.all_sides
     @property
     def smooth_desire(self) -> float: return self.unit_type.smooth_desire
     @property
@@ -153,10 +153,10 @@ class Unit:
 
     def is_in_range_of(self, unit: Self, melee: bool = False) -> bool:
         eff_range = self.get_eff_range_against(unit, melee)
-        return self.get_dist_to(unit.position) <= eff_range + self.EPS
+        return self.get_dist_to(unit.position) <= eff_range + self.EPS/2
 
     def is_in_charge_range_of(self, target_pos: float) -> bool:
-        return self.get_dist_to(target_pos) <= self.speed * CHARGE_DISTANCE + self.EPS
+        return self.get_dist_to(target_pos) <= self.speed * CHARGE_DISTANCE + self.EPS/2
 
     def get_signed_distance_to_unit(self, unit: Self) -> float:
         """Positive means the other unit is ahead of it, according to this unit's direction"""
@@ -178,6 +178,32 @@ class Unit:
         else:                                            # No need to move at all
             return self.position
 
+    def set_if_force_move_towards(self, target: Self, one_way: bool) -> None:
+        melee_preference = (self.power - target.power) - (self.pow_range - target.pow_range)
+
+        if self.is_in_range_of(target, melee=True):
+            return
+        if self.ranged or self.stance is Stance.DEF:
+            return
+        if self.melee or self.stance is Stance.AGG:
+            self.forced_move_towards = target
+            return
+        # self is Mixed and Neutral for all branches below here
+        if target.ranged:
+            self.forced_move_towards = target
+            return
+        if target.melee:
+            return
+        # target is Mixed for all remaining branches
+        if melee_preference > 0:
+            self.forced_move_towards = target
+            return
+        if melee_preference < 0:
+            return
+        if one_way and not self.is_in_front(target):
+            self.forced_move_towards = target
+            return
+
     #########################
     """ ALTERING POSITION """
     #########################
@@ -196,11 +222,11 @@ class Unit:
 
     def deploy_close_to(self, file: int, ref_pos: float):
         self.file = file
-
+        dist = RESERVE_FRC_BEHIND * abs(self.init_pos)
         if self.moving_to_pos:
-            self.position = max(ref_pos - RESERVE_DIST_BEHIND, self.init_pos + MIN_DEPLOY_DIST)
+            self.position = max(ref_pos - dist, self.init_pos + MIN_DEPLOY_DIST)
         else:
-            self.position = min(ref_pos + RESERVE_DIST_BEHIND, self.init_pos - MIN_DEPLOY_DIST)
+            self.position = min(ref_pos + dist, self.init_pos - MIN_DEPLOY_DIST)
 
     def move_safely_away_from_pos(self, ref_pos: float) -> None:
         # Prevents overlapping units, jumps towards home as necessary
@@ -271,15 +297,18 @@ class Army:
 
     @property
     def reserve_power(self) -> float:
-        """reserve_power ~= RESERVES_POWER*total when total far below soft cap, with a drop of:
-        ~30% when total = soft_cap, 50% when total ~= 2.5*soft_cap
+        """ = RESERVES_POWER * total_reserve_power / mean_deployed power, when
+        total_reserve_power << RESERVES_SOFT_CAP * mean power, diminishing returns after:
+        ~30% when total = soft_cap * mean, 50% when total ~= 2.5*soft_cap*mean
         """
+        norm = sum(max(unit.power, unit.pow_range) for unit in self.deployed_units)
+        norm /= len(self.file_units)
         total = sum(max(unit.power, unit.pow_range) for unit in self.reserves)
-        return RESERVES_POWER * RESERVES_SOFT_CAP * log(1 + total/RESERVES_SOFT_CAP)
+        return RESERVES_POWER * RESERVES_SOFT_CAP * log(1 + total / (norm*RESERVES_SOFT_CAP))
 
     @property
     def army_reach(self) -> float:
-        return 2 + max((x.att_range + 2*x.speed for x in self.deployed_units), default=3)
+        return max((x.att_range + 2*x.speed for x in self.deployed_units), default=1)
 
     ###############
     """ QUERIES """
@@ -288,9 +317,9 @@ class Army:
     def is_file_active(self, file: int) -> bool:
         return file in self.file_units
 
-    def is_file_towards_centre_active(self, file: int) -> bool:
+    def get_centrewise_file(self, file: int) -> int:
         assert file != 0, "Central file does not have a central side"
-        return self.is_file_active(file+1 if file < 0 else file-1)
+        return file+1 if file < 0 else file-1
 
     # SPEED
     def get_aggressive_speed(self, unit: Unit, pos_target) -> float:
@@ -330,7 +359,6 @@ class Army:
             dist = unit.get_dist_to(enemy.position)
             return dist + unit.get_range_penalty_against(enemy)
 
-        # TODO: TEST
         if enemy.all_sides:
             neighbors = self.deployed_units
         else:
@@ -394,10 +422,7 @@ class Army:
         if enemy.file in self.file_units:
             self.file_units[enemy.file].move_safely_away_from_pos(enemy.position)
 
-    def slide_file_towards_centre(self, file: int) -> None:
-        assert not self.is_file_towards_centre_active(file)
-        new_file = file+1 if file < 0 else file-1
-
-        self.file_units[new_file] = self.file_units[file]
+    def slide_to_new_file(self, old_file: int, new_file: int) -> None:
+        self.file_units[new_file] = self.file_units[old_file]
         self.file_units[new_file].file = new_file
-        del self.file_units[file]
+        del self.file_units[old_file]

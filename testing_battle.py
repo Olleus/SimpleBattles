@@ -264,23 +264,34 @@ def test_E2():
 
 
 def test_E3():
-    # 3+2 loses to 5+0 when deployed in the centre, but wins at the edge for spears and swords
-    x = spear
+    # 3+2 loses to 5+0 when deployed in the centre or edge
+    x = sword
     army_1, army_2 = preamble()
     army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
-    army_2.add(-1, x).add(0, x).add(1, x).add_reserves(x, x)
+    army_2.add(-1, x).add(0, x).add(-2, x).add_reserves(x, x)
     do_single_terrain_battle(army_1, army_2, even)
 
 
 def test_E4():
-    # 4+1 beat 5+0 and 3+2 (no matter where it's deployed) for melee units, but not mixed
-    x = pike
+    # 4+1 beat 5+0 for swords and spears, but not pikes or mixed
+    x = mixed
     army_1, army_2 = preamble()
-    army_1.add(-2, x).add(-1, x).add(-1, x).add(0, x).add(1, x).add(2, x)
+    army_1.add(-2, x).add(-1, x).add(0, x).add(1, x).add(2, x)
     army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
     do_single_terrain_battle(army_1, army_2, even)
 
 
+def test_E5():
+    # 4+1 beat 3+2 always
+    x = mixed
+    army_1, army_2 = preamble()
+    army_1.stance = Stance.AGG
+    army_1.add(-2, x).add(-1, x).add(0, x).add_reserves(x, x)
+    army_2.add(-2, x).add(-1, x).add(0, x).add(1, x).add_reserves(x)
+    do_single_terrain_battle(army_1, army_2, even)
+
+
+test_E4()
 """ Testing how many weak units are needed to defeat a strong one """
 
 
@@ -449,6 +460,3 @@ def test_H4():
 
     landscape = PresetLandscapes.rolling_green()  # Landscape(terrain, height)
     GraphicBattle(army_1, army_2, landscape, 920, "testing_out").do(10)
-
-
-test_H4()

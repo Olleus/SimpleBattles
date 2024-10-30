@@ -1,6 +1,6 @@
 """Wrapper around Battle to display battles graphically as a series of PIL.Image frames"""
 from io import BytesIO
-from math import inf, sqrt
+from math import atan2, inf, sqrt, pi
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,15 +10,14 @@ from PIL import Image, ImageColor, ImageDraw
 from Config import FRAME_COUNTER, FRAME_MS
 from Battle import Battle
 from Geography import DEFAULT_TERRAIN, Landscape
-from Globals import FILE_WIDTH, FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, Stance, BattleOutcome
+from Globals import FILE_WIDTH, Stance, BattleOutcome
 from Unit import Army, Unit
 
 # Visual constants
 UNIT_FILE_WIDTH: float = 0.95         # Width of unit relative to file
-ATTACK_LINE_OFFSET: float = 0.2       # Fractional offset of fight arrow from unit centre
 ARROWHEAD_SIZE: float = 0.25          # Size of fight arrowhead relative to unit size
 STANCE_ICON_FRAC: float = 1 / 7       # Size of the Stance icon relative to unit size
-FONT_SIZE_FRAC: float = 0.48          # Font size relative to unit pixel height
+FONT_SIZE_FRAC: float = 0.45          # Font size relative to unit pixel height
 
 
 @define
@@ -34,7 +33,7 @@ class Scene:
     drawn_file_width: float = field(init=False)
     pixel_per_pos: float = field(init=False)
     pixel_per_file: float = field(init=False)
-    pixels_unit: tuple[float, float] = field(init=False)
+    pixels_unit: tuple[int, int] = field(init=False)
     croped_res: tuple[int, int] = field(init=False)
     font_size: int = field(init=False)
 
@@ -61,7 +60,7 @@ class Scene:
         else:
             self.font_size = int(self.pixel_per_file * FONT_SIZE_FRAC / 7)
 
-        self.pixels_unit = UNIT_FILE_WIDTH * self.pixel_per_file, self.pixel_per_pos
+        self.pixels_unit = int(UNIT_FILE_WIDTH * self.pixel_per_file), int(self.pixel_per_pos)
         self.croped_res = int(self.pixel_per_file * num_files), int(self.pixel_per_pos * num_pos)
         
         self.draw_background()
@@ -73,18 +72,6 @@ class Scene:
         file_steps = 0.5 + file - self.min_file
         pos_steps = 2 + pos - self.min_pos
         return int(file_steps * self.pixel_per_file), int(pos_steps * self.pixel_per_pos)
-
-    def get_line_width(self, morale_gain: float) -> int:
-        if morale_gain >= FILE_SUPPORTED:
-            return 4
-        elif morale_gain > 0:
-            return 3
-        elif morale_gain == FILE_EMPTY:
-            return 2
-        elif morale_gain > FILE_VULNERABLE:
-            return 1
-        else:
-            return 0
 
     def get_blended_color(self, color_1: str, color_2: str) -> tuple[int, ...]:
         c1 = ImageColor.getrgb(color_1)
@@ -165,16 +152,13 @@ class Scene:
                                              font_size=self.font_size+8, fill="Black", anchor="lt")
         self.frames.append(self.canvas)
 
-    def draw_unit_image(self, unit: Unit, color: str, flanks: tuple[float, float], pow_mod: float,
-                        morale: float, bkgd_color=(255, 255, 255, 64)) -> Image.Image:
+    def draw_unit_image(self, unit: Unit, color: str, pow_mod: float, morale: float,
+                        bkgd_color=(255, 255, 255, 64)) -> Image.Image:
         x, y = self.pixels_unit
         image = Image.new(mode="RGBA", size=(int(x+2), int(y+2)), color=bkgd_color)
         draw = ImageDraw.Draw(image)
 
-        draw.line([(1, 1), (x-1, 1)], fill=color, width=2)
-        draw.line([(1, y), (x-1, y)], fill=color, width=2)
-        draw.line([(1, 1), (1, y)], fill=color, width=int(self.get_line_width(flanks[0])))
-        draw.line([(x-1, 1), (x-1, y)], fill=color, width=int(self.get_line_width(flanks[1]))) 
+        draw.rectangle((1, 1, x+1, y+1), outline=color, width=2)
         
         self.draw_unit_text(draw, x, y, unit, color, pow_mod, morale)
         self.draw_stance_poligon(draw, unit, color)
@@ -192,7 +176,7 @@ class Scene:
             draw.text((x//2, mid), name+" "*6, fill=color, font_size=self.font_size, anchor="mm")
             draw.text((x-3, 4), str_m, fill=color, font_size=small, anchor="rt")
             if str_r:
-                draw.text((x-4, y-1), str_r, fill=color, font_size=small, anchor="rb")
+                draw.text((x-4, y-2), str_r, fill=color, font_size=small, anchor="rb")
 
         else:  # Everything in one line fits better when long and skinny
             draw.text((x//3, mid), name, fill=color, font_size=self.font_size, anchor="mm")
@@ -201,64 +185,72 @@ class Scene:
     def draw_stance_poligon(self, draw: ImageDraw.ImageDraw, unit: Unit, color: str) -> None:
         r = self.pixel_per_pos * STANCE_ICON_FRAC
         if unit.stance is Stance.AGG:
-            draw.regular_polygon((4+r, 2+r, r), 3, rotation=60, fill=color, width=0)
+            draw.regular_polygon((3+r, 3+r, r), 3, rotation=60, fill=color, width=0)
         elif unit.stance is Stance.BAL:
-            draw.regular_polygon((4+r, 3+r, r), 4, fill=color, width=0)
+            draw.regular_polygon((3+r, 3+r, r), 4, fill=color, width=0)
         elif unit.stance is Stance.DEF:
             draw.regular_polygon((4+r, 4+r, r), 6, fill=color, width=0)
 
     def paste_unit_image(self, image: Image.Image, file: float | None, position: float) -> None:
         file = (self.min_file + self.max_file) / 2 if file is None else file
         centre_x, centre_y = self.get_coords(file, position)
-        coord = (centre_x - self.pixels_unit[0]//2, centre_y - self.pixels_unit[1]//2)
-        self.canvas.paste(image, (int(coord[0]), int(coord[1])), image)
+        coord = int(centre_x - self.pixels_unit[0]/2), int(centre_y - self.pixels_unit[1]/2)
+        self.canvas.paste(image, coord, image)
 
     def draw_fight(self, unit_A: Unit, unit_B: Unit, color: str | tuple[int, ...], both: bool
                    ) -> None:
         pos_A = list(self.get_coords(unit_A.file, unit_A.position))
         pos_B = list(self.get_coords(unit_B.file, unit_B.position))
-        self.adjust_line_end_points(pos_A, pos_B)
+        self.adjust_line_end_points(pos_A, pos_B, unit_A.is_in_range_of(unit_B, melee=True))
+        self.draw_aa_arrow(pos_A, pos_B, color, both)
 
-        ImageDraw.Draw(self.canvas).line([*pos_A, *pos_B], fill=color, width=3)
-
-        self.draw_arrowhead(pos_B, pos_A, color)
-        if both:
-            self.draw_arrowhead(pos_A, pos_B, color)
-
-    def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float]) -> None:
-        x_offset = self.pixel_per_pos * ATTACK_LINE_OFFSET
-        y_offset = self.drawn_file_width/2 * (1-ATTACK_LINE_OFFSET) * self.pixel_per_pos
-
-        if pos_A[0] == pos_B[0] or abs(pos_A[1] - pos_B[1]) > self.pixel_per_pos:
+    def adjust_line_end_points(self, pos_A: list[float], pos_B: list[float], melee: bool) -> None:
+        y_step = 0.2 * self.pixels_unit[1]
+        if pos_A[0] == pos_B[0] or not melee:
             if pos_A[1] > pos_B[1]:
-                pos_A[1] -= x_offset
-                pos_B[1] += x_offset
+                pos_A[1] -= y_step
+                pos_B[1] += y_step
             elif pos_A[1] < pos_B[1]:
-                pos_A[1] += x_offset
-                pos_B[1] -= x_offset
-        else:
-            if pos_A[0] > pos_B[0]:
-                pos_A[0] -= y_offset
-            elif pos_A[0] < pos_B[0]:
-                pos_A[0] += y_offset
+                pos_A[1] += y_step
+                pos_B[1] -= y_step
 
+        x_step = (0.45*self.pixels_unit[0]) if melee else (0.3*self.pixels_unit[0])
         if pos_A[0] > pos_B[0]:
-            pos_B[0] += y_offset
+            pos_A[0] -= x_step
+            pos_B[0] += x_step
         elif pos_A[0] < pos_B[0]:
-            pos_B[0] -= y_offset
+            pos_A[0] += x_step
+            pos_B[0] -= x_step
+        else:  # Really not sure why we need to shift these vertical arrows down slightly
+            pos_A[1] += 2
+            pos_B[1] += 2
 
-    def draw_arrowhead(self, pos: list[float], origin: list[float], color: str | tuple[int, ...]
-                       ) -> None:
-        vec = pos[0] - origin[0], pos[1] - origin[1]
-        norm_len = self.pixel_per_pos * ARROWHEAD_SIZE / sqrt(vec[0]**2 + vec[1]**2)
+    def draw_aa_arrow(self, start: list[float], end: list[float], color: str | tuple[int, ...],
+                      both: bool = False) -> None:
+        vec = end[0] - start[0], end[1] - start[1]
+        length = sqrt(vec[0]**2 + vec[1]**2)
+        angle = -atan2(vec[1], vec[0]) * 180 / pi
+        half_arrow = min(5, int(length/4))  # Shrinks arrows so they might touch, but don't overlap
 
-        back_step = vec[0]*norm_len, vec[1]*norm_len
-        side_step = -vec[1]*norm_len/2, vec[0]*norm_len/2
+        image = Image.new(mode="RGBA", size=(int(length), 2*half_arrow))
+        draw = ImageDraw.Draw(image)
 
-        pos_2 = pos[0] - back_step[0] + side_step[0], pos[1] - back_step[1] + side_step[1]
-        pos_3 = pos[0] - back_step[0] - side_step[0], pos[1] - back_step[1] - side_step[1]
+        draw.polygon([length, half_arrow,
+                      length-2*half_arrow, 0,
+                      length-2*half_arrow, 2*half_arrow], fill=color)
+        if both:
+            draw.polygon([0, half_arrow,
+                          2*half_arrow, 0,
+                          2*half_arrow, 2*half_arrow], fill=color)
 
-        ImageDraw.Draw(self.canvas).polygon([*pos, *pos_2, *pos_3], fill=color)
+            draw.line([half_arrow, half_arrow, length-half_arrow, half_arrow], fill=color, width=3)
+        else:
+            draw.line([0, half_arrow, length-half_arrow, half_arrow], fill=color, width=3)
+
+        rotated = image.rotate(angle, resample=Image.Resampling.BILINEAR, expand=True)
+        left = min(start[0], end[0])
+        top = min(start[1], end[1])
+        self.canvas.paste(rotated, (int(left), int(top)), rotated)
 
 
 @define
@@ -308,9 +300,7 @@ class GraphicBattle(Battle):
         for unit in army.deployed_units:
             power_mods = self.get_power_mods(unit)
             morale = self.get_eff_morale(unit)
-            flanks = (self.get_morale_from_supporting_file(unit, unit.file - 1),
-                      self.get_morale_from_supporting_file(unit, unit.file + 1))
-            image = self.scene.draw_unit_image(unit, army.color, flanks, power_mods, morale)
+            image = self.scene.draw_unit_image(unit, army.color, power_mods, morale)
             self.scene.paste_unit_image(image, unit.file, unit.position)
 
     def draw_removed_units(self, army: Army) -> None:
@@ -319,16 +309,14 @@ class GraphicBattle(Battle):
         for unit in reversed(army.removed):
             if unit.file not in present:
                 present.add(unit.file)
-                image = self.scene.draw_unit_image(
-                    unit, "Gray", (FILE_EMPTY, FILE_EMPTY), 0, unit.morale)
+                image = self.scene.draw_unit_image(unit, "Gray", 0, unit.morale)
                 position = unit.init_pos - 0.01  # offset needed because of rouning errors
                 position += 2 if position > 0 else -2
                 self.scene.paste_unit_image(image, unit.file, position)
 
     def draw_reserve_units(self, army: Army) -> None:
         for slot, unit in enumerate(reversed(army.reserves)):
-            image = self.scene.draw_unit_image(
-                unit, army.color, (FILE_EMPTY, FILE_EMPTY), 0, unit.morale, bkgd_color="White")
+            image = self.scene.draw_unit_image(unit, army.color, 0, unit.morale, bkgd_color="White")
             position = unit.init_pos
             position += (1.0 + slot/5) if position > 0 else -(1.0 + slot/5)
             self.scene.paste_unit_image(image, None, position)

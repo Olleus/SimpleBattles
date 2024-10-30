@@ -6,7 +6,7 @@ from attrs import define, Factory, field
 
 from Config import DELTA_T
 from Geography import Landscape
-from Globals import RESERVE_DIST_BEHIND, BASE_SPEED, PUSH_RESISTANCE, HALT_POWER_GRADIENT, \
+from Globals import BASE_SPEED, PUSH_RESISTANCE, HALT_POWER_GRADIENT, \
                     POWER_SCALE, LOW_MORALE_POWER, PURSUE_MORALE, \
                     FILE_EMPTY, FILE_SUPPORTED, FILE_VULNERABLE, Stance, BattleOutcome
 from Unit import Army, Unit
@@ -19,10 +19,12 @@ class FightPairs:
     army_2: Army
     _potentials: dict[Unit, set[Unit]] = field(init=False, default=Factory(dict))
     _assignments: dict[Unit, Unit] = field(init=False, default=Factory(dict))
+    _old_assignments: dict[Unit, Unit] = field(init=False, default=Factory(dict))
     two_way_pairs: list[tuple[Unit, Unit]] = field(init=False, default=Factory(list))
     one_way_pairs: list[tuple[Unit, Unit]] = field(init=False, default=Factory(list))
 
     def reset(self) -> None:
+        self._old_assignments = self._assignments
         self._potentials = {}
         self._assignments = {}
         self.two_way_pairs = []
@@ -57,7 +59,6 @@ class FightPairs:
     def find_single_potentials(self, file: int, unit: Unit, opposing: Army) -> set[Unit]:
         targets: set[Unit] = set()
 
-        # TODO: TEST
         files = opposing.file_units.keys() if unit.all_sides else [file-1, file, file+1]
         for file in files:
             target = opposing.file_units.get(file, None)
@@ -74,14 +75,18 @@ class FightPairs:
                 (Recall that True > False)"""
             unit, target = args
             frontal = unit.is_in_front(target)
-            dist = unit.get_dist_to(target.position) + unit.get_range_penalty_against(target)  # TODO: TEST
             melee = unit.is_in_range_of(target, melee=True)
             attacker = target in assigned_to.get(unit, set())
-            unassigned = target not in self._assignments
-            return (frontal and melee,                                         # Always do if true
-                    melee, frontal, attacker, unassigned,                      # Top rank priorities
-                    -dist, -unit.att_range, abs(unit.file), abs(target.file),  # Remaing priorities
-                    unit.file, target.file, unit.position)                     # Breaks any ties
+            old_target = target is self._old_assignments.get(unit, None)
+
+            score = -unit.get_dist_to(target.position) * (1 + 2*abs(unit.file-target.file))
+            score *= (1 + target.morale)
+            score *= 0.5 if old_target else 1
+            score *= 0.5 if target not in self._assignments else 1
+
+            return (melee and frontal, melee and old_target, melee,
+                    attacker and frontal, attacker and old_target, attacker,
+                    score, abs(unit.file), abs(target.file))
 
         unit, target = max(((unit, target)
                            for unit in self._potentials for target in self._potentials[unit]),
@@ -93,7 +98,7 @@ class FightPairs:
         self._assignments[unit] = target
         if (target, unit) in self.one_way_pairs:
             self.one_way_pairs.remove((target, unit))
-            self.two_way_pairs.append((unit, target))
+            self.two_way_pairs.append((target, unit))
         else:
             self.one_way_pairs.append((unit, target))
 
@@ -117,7 +122,6 @@ class Battle:
     # Class attributes, computed from Globals but unchanging
     FILE_MEAN = 0.5 * (FILE_SUPPORTED+FILE_VULNERABLE)
     FILE_DIFF = FILE_SUPPORTED - FILE_VULNERABLE
-    FILE_WEIGHT = RESERVE_DIST_BEHIND - 0.5
 
     army_1: Army
     army_2: Army
@@ -129,8 +133,7 @@ class Battle:
     def _default_fight_pairs(self) -> FightPairs: return FightPairs(self.army_1, self.army_2)
 
     def __attrs_post_init__(self) -> None:
-        """Armies positioned symmetrically, with the total gap being the sum of their reach"""
-        init_pos = (self.army_1.army_reach + self.army_2.army_reach) / 2
+        init_pos = (7 + max(self.army_1.army_reach, self.army_2.army_reach)) / 2  # >= 5
         self.army_1.set_up(-init_pos, self.landscape)
         self.army_2.set_up(init_pos, self.landscape)
 
@@ -208,7 +211,7 @@ class Battle:
     def tidy(self) -> None:
         units_to_remove: list[Unit] = []
 
-        for unit in sorted(self.iter_all_deployed(), key=lambda x: abs(x.file)):
+        for unit in sorted(self.iter_all_deployed(), key=lambda x: (abs(x.file), -x.speed)):
             if self.do_unit_tidy_to_remove(unit):
                 units_to_remove.append(unit)
 
@@ -217,19 +220,23 @@ class Battle:
     def do_unit_tidy_to_remove(self, unit: Unit) -> bool:
         self.reset_unit_stance(unit)
         unit.forced_move_towards = None
-        if unit.at_end:
-            self.do_unit_reached_end(unit)
+        self.do_unit_reached_end(unit)
+        self.do_slide_unit_inwards(unit)
         return self.get_eff_morale(unit) <= 0 or unit.at_home
 
     def do_unit_reached_end(self, unit: Unit) -> None:
+        if unit.at_end:
+            other_army = self.get_other_army(self.get_army_deployed_in(unit))
+            other_army.change_all_units_morale(PURSUE_MORALE * DELTA_T) 
+
+    def do_slide_unit_inwards(self, unit: Unit) -> None:
         army = self.get_army_deployed_in(unit)
         other_army = self.get_other_army(army)
 
-        other_army.change_all_units_morale(PURSUE_MORALE * DELTA_T)
-
         if unit.file != 0 and other_army.get_blocking_unit(unit) is None:
-            if not army.is_file_towards_centre_active(unit.file):
-                army.slide_file_towards_centre(unit.file)            
+            new_file = army.get_centrewise_file(unit.file)
+            if not army.is_file_active(new_file):
+                army.slide_to_new_file(unit.file, new_file) 
 
     def remove_units(self, units_to_remove: Iterable[Unit]) -> None:
         for unit in units_to_remove:
@@ -305,14 +312,14 @@ class Battle:
         and fuly contested, according to where a fictious "clash line" is on that file"""
         ene_dist = unit.get_signed_distance_to_unit(enemy.file_units[file])
 
-        own_dist = -RESERVE_DIST_BEHIND  # If not friendly, assume fictional unit this far behind
+        own_dist = -2.0  # If no friendly support, assume fictional unit this far behind
         if army.is_file_active(file):
             own_dist = max(own_dist, unit.get_signed_distance_to_unit(army.file_units[file]))
 
         """Mean is weighted towards the enemy: friendly units protect further than enemies threaten.
         Matches RESERVE_DIST_BEHIND such that flanking melee range just causes full vulnerablity
         when there are no supporting units"""
-        mean_dist = (self.FILE_WEIGHT*ene_dist + own_dist) / (1 + self.FILE_WEIGHT)
+        mean_dist = (1.5*ene_dist + own_dist) / 2.5
         morale = self._morale_from_mean_clash_distance(mean_dist)
         return morale if army.is_file_active(file) else min(0, morale)
 
@@ -330,7 +337,8 @@ class Battle:
     def move_post_fight_two_way(self, unit_A: Unit, unit_B: Unit, advA: float, advB: float) -> None:
         self.call_neighbors_forwards(unit_A, unit_B)
         self.call_neighbors_forwards(unit_B, unit_A)
-        self.set_force_move_two_way_fight(unit_A, unit_B)
+        unit_A.set_if_force_move_towards(unit_B, False)
+        unit_B.set_if_force_move_towards(unit_A, False)
         self.do_push(unit_A, unit_B, advA, advB)
 
     def move_post_fight_one_way(self, unit_A: Unit, unit_B: Unit) -> None:
@@ -338,7 +346,7 @@ class Battle:
         if not self.fight_pairs.is_attacking(unit_B):
             # Do not change stance if already fighting elsewhere
             unit_B.stance = Stance.AGG
-        self.set_force_move_one_way_fight(unit_A, unit_B)
+        unit_A.set_if_force_move_towards(unit_B, True)
 
     def call_neighbors_forwards(self, unit: Unit, enemy: Unit) -> None:
         """Neighbors that are: not attacking someone else & can hit the attacker quickly, join in"""
@@ -346,35 +354,6 @@ class Battle:
             if self.fight_pairs.is_not_attacking_except_target(neighbor, enemy):
                 if neighbor.get_dist_to(enemy.position) <= neighbor.att_range + neighbor.speed:
                     neighbor.stance = min(neighbor.stance, Stance.BAL)
-
-    def set_force_move_two_way_fight(self, unit_A: Unit, unit_B: Unit) -> None:
-        """Which unit, if any, will advance towards enemy currently engaged with"""
-        if unit_A.is_in_range_of(unit_B, melee=True):
-            pass
-        elif unit_A.ranged and unit_B.ranged:
-            pass
-        elif unit_A.ranged and unit_B.mixed and (unit_B.stance is not Stance.DEF):
-            unit_B.forced_move_towards = unit_A
-        elif unit_A.mixed and unit_B.ranged and (unit_A.stance is not Stance.DEF):
-            unit_A.forced_move_towards = unit_B
-
-        elif unit_A.mixed and unit_B.mixed:
-            if not unit_A.is_in_front(unit_B):
-                unit_A.forced_move_towards = unit_B
-                unit_B.forced_move_towards = unit_A
-            if unit_A.stance is Stance.AGG:
-                unit_A.forced_move_towards = unit_B
-            if unit_B.stance is Stance.AGG:
-                unit_B.forced_move_towards = unit_A
-
-    def set_force_move_one_way_fight(self, unit_A: Unit, unit_B: Unit) -> None:
-        if unit_A.mixed and not unit_A.is_in_range_of(unit_B, melee=True):
-            if unit_A.stance is Stance.AGG:
-                unit_A.forced_move_towards = unit_B
-            elif unit_A.stance is Stance.BAL and unit_B.ranged:
-                unit_A.forced_move_towards = unit_B
-            elif unit_A.stance is Stance.BAL and unit_B.mixed and not unit_A.is_in_front(unit_B):
-                unit_A.forced_move_towards = unit_B
 
     def do_push(self, unit_A: Unit, unit_B: Unit, adv_A: float, adv_B: float) -> None:
         if unit_A.forced_move_towards is None and unit_B.forced_move_towards is None:

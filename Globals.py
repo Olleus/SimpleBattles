@@ -5,7 +5,7 @@ from enum import IntEnum
 # Distance
 # UNIT_HEIGHT = 1                # Height of all units
 FILE_WIDTH: float = 5            # Width of file
-RESERVE_DIST_BEHIND: float = 2   # How far behind a defeated unit a reserve will deploy
+RESERVE_FRC_BEHIND: float = 0.3  # *init_pos = how far behind a defeated unit a reserve will deploy 
 MIN_DEPLOY_DIST: float = 1       # Closest to edge of the map that reserves will deploy
 SIDE_RANGE_PENALTY: float = 0.5  # Range penalty when attacking adjacent file
 
@@ -20,8 +20,8 @@ POWER_SCALE: float = 50          # This much power difference results in a 2:1 c
 LOW_MORALE_POWER: float = 200    # Power applied is *[0, 1] from morale
 TERRAIN_POWER: float = 300       # Power applied is *O(0.1)*O(0.1) from roughness and rigidity+speed
 HEIGHT_DIF_POWER: float = 20     # Power applied is *O(0.1) from height difference
-RESERVES_POWER: float = 0.125    # Rate at which reserves give their own power to deployed unit
-RESERVES_SOFT_CAP: float = 500   # Scale which determines how sharply the above diminishes
+RESERVES_POWER: float = 35       # Power per reserve unit of average power
+RESERVES_SOFT_CAP: float = 1.8   # Diminishing returns as total reserves are this times mean power
 
 # Morale
 PURSUE_MORALE: float = -0.5      # Morale loss done over 1/deltaT when a unit reaches end of the map

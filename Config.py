@@ -6,9 +6,8 @@ As long as value is sufficiently small, should have negligible impact on actual 
 """
 DELTA_T = 0.005
 
-
 """Whether the frame counter is to be shown or not"""
 FRAME_COUNTER = True
 
 """Duration of each frame in ms"""
-FRAME_MS = 30
+FRAME_MS = 50
